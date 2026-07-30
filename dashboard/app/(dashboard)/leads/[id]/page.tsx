@@ -32,6 +32,18 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
     .eq("lead_id", id)
     .order("created_at", { ascending: false });
 
+  const { data: smsMessages } = await supabase
+    .from("sms_messages")
+    .select("id, direction, body, status, created_at")
+    .eq("lead_id", id)
+    .order("created_at", { ascending: false });
+
+  const { data: emailMessages } = await supabase
+    .from("email_messages")
+    .select("id, direction, subject, status, created_at")
+    .eq("lead_id", id)
+    .order("created_at", { ascending: false });
+
   const prop = lead.properties ?? {};
   const callBrief = lead.call_brief as Record<string, any> | null;
 
@@ -109,6 +121,37 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
             </div>
           ))}
           {(offers ?? []).length === 0 && <p className="p-4 text-white/40">No offers yet.</p>}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-medium">Texts</h2>
+        <div className="divide-y divide-white/10 rounded border border-white/10">
+          {(smsMessages ?? []).map((sms) => (
+            <div key={sms.id} className="p-4">
+              <div className="flex items-center justify-between text-white/50">
+                <span>{sms.direction}</span>
+                <span>{new Date(sms.created_at).toLocaleString()}</span>
+              </div>
+              <p className="mt-1">{sms.body}</p>
+            </div>
+          ))}
+          {(smsMessages ?? []).length === 0 && <p className="p-4 text-white/40">No texts yet.</p>}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-medium">Emails</h2>
+        <div className="divide-y divide-white/10 rounded border border-white/10">
+          {(emailMessages ?? []).map((email) => (
+            <div key={email.id} className="flex items-center justify-between p-4">
+              <span>{email.subject}</span>
+              <span className="text-white/50">
+                {email.direction} · {email.status}
+              </span>
+            </div>
+          ))}
+          {(emailMessages ?? []).length === 0 && <p className="p-4 text-white/40">No emails yet.</p>}
         </div>
       </section>
     </div>

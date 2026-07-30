@@ -1,2 +1,3 @@
 web: uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT
 worker: python -m bob.main
+dialer: python -m dialer.main

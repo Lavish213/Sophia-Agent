@@ -5,12 +5,12 @@ AI voice acquisitions agent for a real estate wholesaling business in
 San Joaquin County, California. Sophia calls and receives calls from
 distressed-property sellers, qualifies them, and books walkthroughs.
 Ground-up rebuild of an earlier prototype (Lavish213/rei-agent) after
-an audit found core paths silently broken. This repo is scoped to a
-working MVP first: manual CSV lead import, comps/ARV/MAO calculation,
-correctly-wired voice pipeline, and a dashboard. Automated lead
-scraping, SMS drip sequences, and elaborate live emotional-state
-tracking are deferred to a phase 2, once the core is proven on real
-calls.
+an audit found core paths silently broken. Scope: manual CSV lead
+import, comps/ARV/MAO calculation, a correctly-wired voice pipeline,
+a dialer that works an uploaded lead list on its own (calling, then
+SMS/email follow-up), and a dashboard. Automated lead scraping and
+elaborate live emotional-state tracking are deferred to a phase 2,
+once the core is proven on real calls.
 
 ## OWNER
 Angelo Washington. Goes by Alanzo Alcarez for the business.
@@ -20,10 +20,12 @@ Business domain: sanjoaquinhousebuyers.com
 ## STACK
 - Backend: Python 3.11, FastAPI
 - Voice: SignalWire SDK + Pipecat + Deepgram (STT + TTS) + Claude API
+- SMS: SignalWire. Email: SendGrid.
 - Bob worker: standalone process, same repo, generates call briefs
+- Dialer worker: standalone process, same repo, batch outbound calling
 - Database: Supabase (Postgres), RLS enabled on every table
 - Dashboard: Next.js 14 (pinned), Tailwind, Supabase Auth + JS client
-- Hosting: Railway (backend + bob worker), Vercel (dashboard)
+- Hosting: Railway (backend + bob + dialer), Vercel (dashboard)
 - Phone/SMS: SignalWire only — never Twilio
 
 ## VOICE AGENT
@@ -66,18 +68,20 @@ backend/comps/               → comp entry → ARV/MAO calculator
 backend/compliance/          → TCPA/DNC/calling-hours gate
 backend/voice/                → Pipecat pipeline + SignalWire + tools
 backend/voice/prompts/        → Sophia's system prompt (one file)
-backend/api/                  → FastAPI route handlers
-bob/                           → standalone call-brief worker process
-dashboard/                     → Next.js app, Supabase Auth
-scripts/                       → one-off scripts, never imported by backend
-supabase/migrations/           → schema files only
-tests/                         → pytest coverage for backend/*
+backend/alerts/                → SMS (SignalWire) + email (SendGrid) + post-call follow-up
+backend/api/                    → FastAPI route handlers
+bob/                             → standalone call-brief worker process
+dialer/                           → standalone batch-outbound-calling worker process
+dashboard/                         → Next.js app, Supabase Auth
+scripts/                            → one-off scripts, never imported by backend
+supabase/migrations/                 → schema files only
+tests/                                 → pytest coverage for backend/*, bob/, dialer/
 
 ## DATABASE TABLES
 properties          → cached distressed properties (no phone numbers)
 contacts             → skip-traced owner contact info
 leads                → active pipeline leads, one per property
-calls                → call records, transcripts, disposition
+calls                → call records, transcripts, disposition, ended_at
 transcript_chunks    → per-utterance transcript rows for a call
 call_events          → structured event log for a call
 comps                → comparable sales entered per property
@@ -86,15 +90,36 @@ dnc_list             → numbers that must never be called/texted
 lead_intel_packets   → structured facts extracted across calls
 decision_records     → audit trail of bob's call-brief decisions
 seller_memory        → durable per-lead facts read at call start
+sms_messages         → outbound + inbound SMS log
+email_messages       → outbound + inbound email log
+
+## OUTBOUND / FOLLOW-UP BEHAVIOR
+Dropping a CSV in only ingests it — nothing is called, texted, or
+emailed automatically until the dialer process picks it up. The
+dialer runs on its own schedule (DIALER_INTERVAL_MINUTES), pulls due
+leads (respecting opted_out/dnc_blocked/stage/reattempt interval),
+checks a DB-backed active-call count against MAX_CONCURRENT_OUTBOUND
+before every single dial (never an in-memory counter — that leaks
+across restarts and was the old repo's outbound-calling bug), and
+calls place_outbound_call, which itself re-checks compliance per
+lead. After a call resolves — including a call that never connects
+(no-answer/busy/failed, detected via the SignalWire status callback,
+not just the websocket path) — backend/alerts/followup.py sends a
+disposition-appropriate SMS and/or email. Every send re-checks
+opted_out/email_opted_out immediately before sending, not just at
+dial time. Inbound SMS handles STOP/START itself; there is no
+separate DNC sync step required for that.
 
 ## BUILD ORDER
 1. backend/lib/config.py + db.py     ← START HERE
-2. supabase/migrations/0001_init.sql
+2. supabase/migrations/0001_init.sql, 0002_outreach.sql
 3. backend/scout/parser.py + scorer.py
 4. backend/comps/calculator.py
 5. backend/compliance/compliance.py
 6. backend/api/main.py + routes
 7. backend/voice/webhook.py + agent.py + tools.py
-8. bob/ worker
-9. dashboard/ (Next.js)
-10. Railway + Vercel deployment
+8. backend/alerts/sms.py + email.py + followup.py
+9. bob/ worker
+10. dialer/ worker
+11. dashboard/ (Next.js)
+12. Railway (3 processes) + Vercel deployment

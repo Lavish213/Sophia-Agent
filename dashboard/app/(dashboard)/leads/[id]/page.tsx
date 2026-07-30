@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import LeadActions from "@/components/LeadActions";
+import CompsAndOffers from "@/components/CompsAndOffers";
 
 function formatCents(cents: number | null): string {
   if (cents === null || cents === undefined) return "—";
@@ -31,6 +32,12 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
     .select("id, amount, status, created_at")
     .eq("lead_id", id)
     .order("created_at", { ascending: false });
+
+  const { data: comps } = await supabase
+    .from("comps")
+    .select("id, address, sold_price, sqft, sold_date")
+    .eq("subject_property_id", lead.properties?.id ?? "")
+    .order("sold_date", { ascending: false });
 
   const { data: smsMessages } = await supabase
     .from("sms_messages")
@@ -109,6 +116,15 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
           ))}
           {(calls ?? []).length === 0 && <p className="p-4 text-white/40">No calls yet.</p>}
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-lg font-medium">Comps and pricing</h2>
+        <CompsAndOffers
+          propertyId={lead.properties?.id ?? null}
+          leadId={id}
+          comps={comps ?? []}
+        />
       </section>
 
       <section>

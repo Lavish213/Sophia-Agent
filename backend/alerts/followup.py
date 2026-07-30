@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from loguru import logger
 
 from backend.alerts.email import send_email
@@ -12,46 +14,80 @@ _CONVERSATION_DISPOSITIONS = {"HOT", "WARM", "COLD", "DEAD"}
 _VOICEMAIL_DISPOSITIONS = {"voicemail"}
 
 
-def _no_answer_sms_body() -> str:
+def _first_name(lead: dict) -> str:
+    owner_name = (lead.get("properties") or {}).get("owner_name") or ""
+    return owner_name.split(" ")[0] if owner_name else ""
+
+
+def _greeting(lead: dict) -> str:
+    name = _first_name(lead)
+    return f"Hey {name}," if name else "Hey,"
+
+
+def _property_reference(lead: dict) -> str:
+    address = (lead.get("properties") or {}).get("address") or ""
+    if not address or address.startswith("Address needed"):
+        return "your property"
+    return address
+
+
+def _no_answer_sms_body(lead: dict) -> str:
     settings = get_settings()
     return (
-        f"Hey, this is Sophia with {settings.business_name} — tried giving you a call "
-        "about your property but couldn't reach you. No worries, just call or text "
-        "this number back whenever works. Reply STOP to stop texts."
+        f"{_greeting(lead)} it's Sophia with {settings.business_name}. Tried reaching you about "
+        f"{_property_reference(lead)} but couldn't get through. Call or text back whenever works "
+        "— no rush. Reply STOP to opt out."
     )
 
 
-def _no_answer_email_body(first_name: str) -> str:
+def _no_answer_email_body(lead: dict) -> str:
     settings = get_settings()
+    name = _first_name(lead) or "there"
     return (
-        f"Hi {first_name},\n\n"
-        f"This is Sophia with {settings.business_name}. I tried reaching you by phone "
-        "about your property but wasn't able to connect. If you're open to a quick "
-        "conversation about a potential cash offer, feel free to call or text this "
-        f"number back, or just reply to this email.\n\nThanks,\nSophia"
+        f"Hi {name},\n\n"
+        f"This is Sophia with {settings.business_name}. I tried reaching you by phone about "
+        f"{_property_reference(lead)} but wasn't able to connect.\n\n"
+        "We buy houses in San Joaquin County as-is — no agents, no commissions, and no repairs "
+        "on your end. If you're open to a quick conversation about what we could offer, just "
+        "reply to this email or call or text me back.\n\n"
+        "If you'd rather not hear from us, reply to this email and let me know and I'll take "
+        f"you off the list.\n\nThanks,\nSophia\n{settings.business_name}"
     )
 
 
-def _voicemail_sms_body() -> str:
+def _voicemail_sms_body(lead: dict) -> str:
     settings = get_settings()
     return (
-        f"Hey, this is Sophia with {settings.business_name} — just left you a voicemail "
-        "about your property. No pressure at all, but if you're curious what we could offer, "
-        "just text me back here. Reply STOP to stop texts."
+        f"{_greeting(lead)} it's Sophia with {settings.business_name} — just left you a voicemail "
+        f"about {_property_reference(lead)}. No pressure, but if you're curious what we'd offer, "
+        "just text me back here. Reply STOP to opt out."
     )
+
+
+def format_appointment(appointment_at: str | None) -> str:
+    if not appointment_at:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(appointment_at.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    return parsed.strftime("%A %b %-d at %-I:%M %p")
 
 
 def _conversation_sms_body(lead: dict) -> str | None:
     settings = get_settings()
     if lead.get("appointment_at"):
+        when = format_appointment(lead.get("appointment_at"))
+        when_phrase = f" for {when}" if when else ""
         return (
-            f"Hey, it's Sophia with {settings.business_name} — great talking with you! "
-            "Confirming our walkthrough, talk soon. Reply STOP to stop texts."
+            f"{_greeting(lead)} it's Sophia with {settings.business_name} — great talking with you. "
+            f"You're all set{when_phrase}. If anything changes just text me here. "
+            "Reply STOP to opt out."
         )
     return (
-        f"Hey, it's Sophia with {settings.business_name} — thanks for chatting with me. "
-        "I'll follow up soon, and feel free to reach out anytime before then. "
-        "Reply STOP to stop texts."
+        f"{_greeting(lead)} it's Sophia with {settings.business_name} — thanks for chatting. "
+        "I'll follow up soon, and you can reach me right here anytime before then. "
+        "Reply STOP to opt out."
     )
 
 
@@ -59,7 +95,7 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
     if not disposition:
         return {"sms": None, "email": None}
 
-    lead = db.get_lead_by_id(lead_id)
+    lead = db.get_lead_with_property(lead_id)
     if not lead:
         return {"sms": None, "email": None}
 
@@ -67,15 +103,14 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
 
     if disposition in _VOICEMAIL_DISPOSITIONS:
         if lead.get("owner_phone"):
-            results["sms"] = send_sms(lead_id, _voicemail_sms_body())
+            results["sms"] = send_sms(lead_id, _voicemail_sms_body(lead))
         return results
 
     if disposition in _NO_ANSWER_DISPOSITIONS:
         if lead.get("owner_phone"):
-            results["sms"] = send_sms(lead_id, _no_answer_sms_body())
+            results["sms"] = send_sms(lead_id, _no_answer_sms_body(lead))
         if lead.get("owner_email"):
-            first_name = (lead.get("owner_name") or "there").split(" ")[0]
-            results["email"] = send_email(lead_id, "Tried to reach you", _no_answer_email_body(first_name))
+            results["email"] = send_email(lead_id, "Tried to reach you", _no_answer_email_body(lead))
         return results
 
     if disposition in ("HOT", "WARM"):

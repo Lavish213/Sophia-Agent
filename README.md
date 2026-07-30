@@ -190,11 +190,19 @@ legal dead end.
 
 ### Website form setup
 
-Point your site's form at `POST /api/intake/web-form` with an
-`X-Intake-Secret` header matching `INTAKE_WEBHOOK_SECRET`. Post it from your
-website's **backend**, not from browser JavaScript — the secret must not ship
-to the browser. The endpoint refuses to run at all if the secret isn't
-configured, since it can create leads that get called.
+A working public capture page ships with the dashboard at **`/sell`** — it's
+outside the login wall, and it posts to a server-side route (`/api/lead`)
+that holds the shared secret and forwards to the backend. The secret is set
+as `INTAKE_WEBHOOK_SECRET` in the dashboard's environment **without** a
+`NEXT_PUBLIC_` prefix, so it never reaches the browser. Point
+`sanjoaquinhousebuyers.com` (or a subdomain) at that page and leads flow
+straight into the pipeline.
+
+To wire up a form on a site you host elsewhere instead, post to
+`POST /api/intake/web-form` with an `X-Intake-Secret` header from that
+site's **backend**, never from browser JavaScript. The endpoint refuses to
+run at all if the secret isn't configured, since it can create leads that
+get called.
 
 Set `INTAKE_AUTO_CALL=true` to have Sophia call a web-form lead immediately
 (speed-to-lead). It's off by default, and still passes through the normal

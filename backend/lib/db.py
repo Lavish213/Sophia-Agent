@@ -116,6 +116,39 @@ def get_lead_by_owner_phone(phone: str) -> dict | None:
     return lead
 
 
+def get_leads_needing_skiptrace(limit: int = 25) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("leads")
+        .select("id, property_id, owner_phone")
+        .is_("owner_phone", "null")
+        .eq("dnc_blocked", False)
+        .eq("opted_out", False)
+        .not_.in_("stage", ["closed", "dead"])
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data
+
+
+def get_lead_by_owner_email(email: str) -> dict | None:
+    client = get_client()
+    response = (
+        client.table("leads")
+        .select("*, properties(*)")
+        .eq("owner_email", email)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        return None
+    lead = response.data[0]
+    if isinstance(lead.get("properties"), list):
+        lead["properties"] = lead["properties"][0] if lead["properties"] else {}
+    return lead
+
+
 def list_leads(stage: str | None = None, limit: int = 50) -> list[dict]:
     client = get_client()
     query = client.table("leads").select("*, properties(address, distress_score, estimated_arv, mao)")

@@ -77,10 +77,38 @@ def test_send_sms_success(monkeypatch):
     assert recorded["sid"] == "SM123"
 
 
-def test_handle_inbound_sms_no_match(monkeypatch):
+def test_handle_inbound_sms_stop_from_unknown_number_goes_to_dnc(monkeypatch):
     monkeypatch.setattr(db, "get_lead_by_owner_phone", lambda phone: None)
+    monkeypatch.setattr(db, "get_lead_by_owner_email", lambda email: None)
+    captured = {}
+
+    def _fake_dnc(phone, reason="opt_out"):
+        captured["phone"] = phone
+        captured["reason"] = reason
+
+    monkeypatch.setattr(db, "add_to_dnc_list", _fake_dnc)
+
     action = handle_inbound_sms("2095551212", "STOP")
-    assert action == "unmatched"
+
+    assert action == "opted_out_unknown"
+    assert captured["phone"] == "2095551212"
+
+
+def test_handle_inbound_sms_from_unknown_number_creates_lead(monkeypatch):
+    monkeypatch.setattr(db, "get_lead_by_owner_phone", lambda phone: None)
+    monkeypatch.setattr(db, "get_lead_by_owner_email", lambda email: None)
+    monkeypatch.setattr(db, "upsert_property", lambda data: "prop-new")
+    monkeypatch.setattr(db, "insert_contact", lambda data: None)
+    monkeypatch.setattr(db, "get_or_create_lead", lambda pid: {"id": "lead-new"})
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, fields: None)
+    monkeypatch.setattr(db, "get_lead_by_id", lambda lid: {"id": "lead-new"})
+    logged = {}
+    monkeypatch.setattr(db, "insert_sms_message", lambda *a, **k: logged.update(called=True))
+
+    action = handle_inbound_sms("2095551212", "I want to sell my house")
+
+    assert action == "logged"
+    assert logged.get("called") is True
 
 
 def test_handle_inbound_sms_stop_opts_out(monkeypatch):

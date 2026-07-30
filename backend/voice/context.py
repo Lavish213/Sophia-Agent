@@ -51,7 +51,19 @@ def build_property_context_str(lead: dict) -> str:
 
 
 def preload_call_context(caller_phone: str) -> dict:
-    lead = db.get_lead_by_owner_phone(caller_phone) if caller_phone else None
+    from backend.scout.intake import find_existing_lead, intake_lead
+
+    lead = find_existing_lead(caller_phone) if caller_phone else None
+
+    if not lead and caller_phone:
+        result = intake_lead(
+            "inbound_call",
+            owner_phone=caller_phone,
+            notes="Created automatically from an inbound call.",
+        )
+        if result["success"] and result["lead_id"]:
+            lead = db.get_lead_with_property(result["lead_id"])
+            logger.info("preload_call_context_created_lead phone={} lead_id={}", caller_phone, result["lead_id"])
 
     if not lead:
         logger.info("preload_call_context_no_match phone={}", caller_phone)

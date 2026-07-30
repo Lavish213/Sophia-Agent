@@ -47,10 +47,28 @@ def test_context_str_handles_no_data():
     assert "No prior information" in text
 
 
-def test_preload_call_context_no_match(monkeypatch):
+def test_preload_call_context_creates_lead_for_unknown_caller(monkeypatch):
     monkeypatch.setattr(db, "get_lead_by_owner_phone", lambda phone: None)
+    monkeypatch.setattr(db, "get_lead_by_owner_email", lambda email: None)
+    captured = {}
+    monkeypatch.setattr(db, "upsert_property", lambda data: captured.update(data) or "prop-new")
+    monkeypatch.setattr(db, "insert_contact", lambda data: None)
+    monkeypatch.setattr(db, "get_or_create_lead", lambda pid: {"id": "lead-new"})
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, fields: None)
+    monkeypatch.setattr(
+        db, "get_lead_with_property", lambda lid: {"id": "lead-new", "properties": {}}
+    )
+
     ctx = preload_call_context("2095551212")
+
+    assert ctx["lead_id"] == "lead-new"
+    assert captured["source"] == "inbound_call"
+
+
+def test_preload_call_context_no_phone_stays_anonymous(monkeypatch):
+    ctx = preload_call_context("")
     assert ctx["lead"] is None
+    assert ctx["lead_id"] is None
     assert ctx["owner_first_name"] == "there"
 
 

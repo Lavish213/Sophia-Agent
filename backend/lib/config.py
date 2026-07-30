@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     reddit_poll_interval_minutes: int = 30
     reddit_fetch_limit: int = 25
 
+    intake_webhook_secret: str = ""
+    intake_auto_call: bool = False
+
+    batchdata_api_key: str = ""
+    skiptrace_batch_size: int = 25
+
     environment: str = "development"
 
 

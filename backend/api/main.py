@@ -6,7 +6,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from backend.api.routes import calls, comps, discovery, health, leads, offers, properties, sms_webhook
+from backend.api.routes import (
+    calls,
+    comps,
+    discovery,
+    health,
+    intake,
+    leads,
+    offers,
+    properties,
+    sms_webhook,
+)
 from backend.voice.webhook import router as voice_router
 
 
@@ -34,3 +44,4 @@ app.include_router(calls.router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 app.include_router(sms_webhook.router, prefix="/api")
 app.include_router(discovery.router, prefix="/api")
+app.include_router(intake.router, prefix="/api")

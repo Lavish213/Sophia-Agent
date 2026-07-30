@@ -6,7 +6,29 @@ from loguru import logger
 
 from backend.lib import db
 from backend.lib.config import get_settings
+from backend.scout import skiptrace
 from backend.scout.reddit import fetch_matches
+
+
+def run_skiptrace_pass() -> dict:
+    results = {"attempted": 0, "enriched": 0}
+    if not skiptrace.is_configured():
+        return results
+
+    settings = get_settings()
+    leads = db.get_leads_needing_skiptrace(limit=settings.skiptrace_batch_size)
+
+    for lead in leads:
+        results["attempted"] += 1
+        try:
+            outcome = skiptrace.enrich_lead(lead["id"])
+            if outcome.get("success"):
+                results["enriched"] += 1
+        except Exception as e:
+            logger.error("skiptrace_pass_failed lead_id={} error={}", lead.get("id"), str(e))
+
+    logger.info("skiptrace_pass_complete results={}", results)
+    return results
 
 
 def run_once() -> dict:
@@ -24,6 +46,8 @@ def run_once() -> dict:
         except Exception as e:
             results["errors"] += 1
             logger.error("discovery_match_failed reddit_id={} error={}", match.get("reddit_id"), str(e))
+
+    results["skiptrace"] = run_skiptrace_pass()
 
     logger.info("discovery_run_once_complete results={}", results)
     return results

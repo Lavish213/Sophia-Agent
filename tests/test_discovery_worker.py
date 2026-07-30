@@ -62,4 +62,46 @@ def test_run_once_counts_errors_without_crashing(monkeypatch):
 def test_run_once_empty_matches(monkeypatch):
     monkeypatch.setattr(worker, "fetch_matches", lambda: [])
     results = worker.run_once()
-    assert results == {"fetched": 0, "new_matches": 0, "errors": 0}
+    assert results["fetched"] == 0
+    assert results["new_matches"] == 0
+    assert results["errors"] == 0
+
+
+def test_run_skiptrace_pass_noop_when_not_configured(monkeypatch):
+    from backend.scout import skiptrace
+
+    monkeypatch.setattr(skiptrace, "is_configured", lambda: False)
+    result = worker.run_skiptrace_pass()
+    assert result == {"attempted": 0, "enriched": 0}
+
+
+def test_run_skiptrace_pass_enriches_leads(monkeypatch):
+    from backend.scout import skiptrace
+
+    monkeypatch.setattr(skiptrace, "is_configured", lambda: True)
+    monkeypatch.setattr(db, "get_leads_needing_skiptrace", lambda limit: [{"id": "l1"}, {"id": "l2"}])
+    monkeypatch.setattr(
+        skiptrace, "enrich_lead", lambda lead_id: {"success": lead_id == "l1"}
+    )
+
+    result = worker.run_skiptrace_pass()
+
+    assert result == {"attempted": 2, "enriched": 1}
+
+
+def test_run_skiptrace_pass_survives_a_failing_lead(monkeypatch):
+    from backend.scout import skiptrace
+
+    monkeypatch.setattr(skiptrace, "is_configured", lambda: True)
+    monkeypatch.setattr(db, "get_leads_needing_skiptrace", lambda limit: [{"id": "l1"}, {"id": "l2"}])
+
+    def _enrich(lead_id):
+        if lead_id == "l1":
+            raise RuntimeError("api down")
+        return {"success": True}
+
+    monkeypatch.setattr(skiptrace, "enrich_lead", _enrich)
+
+    result = worker.run_skiptrace_pass()
+
+    assert result == {"attempted": 2, "enriched": 1}

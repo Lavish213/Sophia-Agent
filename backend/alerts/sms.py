@@ -49,12 +49,30 @@ def _normalize_body(body: str) -> str:
 
 
 def handle_inbound_sms(from_number: str, body: str) -> str:
-    lead = db.get_lead_by_owner_phone(from_number)
+    from backend.scout.intake import find_existing_lead, intake_lead
+
     normalized = _normalize_body(body)
+    lead = find_existing_lead(from_number)
 
     if not lead:
-        logger.info("inbound_sms_no_lead_match from={}", from_number)
-        return "unmatched"
+        if normalized in _STOP_KEYWORDS:
+            db.add_to_dnc_list(from_number, "inbound STOP from unknown number")
+            logger.info("inbound_sms_stop_from_unknown from={}", from_number)
+            return "opted_out_unknown"
+
+        result = intake_lead(
+            "inbound_sms",
+            owner_phone=from_number,
+            notes=f"Created automatically from an inbound text: {body.strip()}",
+        )
+        if not result["success"] or not result["lead_id"]:
+            logger.warning("inbound_sms_intake_failed from={} reason={}", from_number, result.get("reason"))
+            return "unmatched"
+
+        lead = db.get_lead_by_id(result["lead_id"])
+        if not lead:
+            return "unmatched"
+        logger.info("inbound_sms_created_lead from={} lead_id={}", from_number, lead["id"])
 
     db.insert_sms_message(lead["id"], "inbound", body, status="received")
 

@@ -35,7 +35,7 @@ class Settings(BaseSettings):
 
     deepgram_stt_model: str = "nova-2"
     deepgram_tts_model: str = "aura-2-luna-en"
-    llm_model: str = "claude-sonnet-4-5"
+    llm_model: str = "claude-sonnet-4-6"
 
     bob_worker_interval_minutes: int = 5
     bob_batch_size: int = 20

@@ -120,11 +120,18 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         lead_id = call_context.get("lead_id")
+        call_sid = call_context.get("call_sid")
         started_at_holder["started_at"] = datetime.now(UTC)
-        call_id = db.insert_call({
-            "lead_id": lead_id,
-            "direction": call_context.get("direction", "inbound"),
-        })
+
+        existing_call = db.get_call_by_signalwire_sid(call_sid) if call_sid else None
+        if existing_call:
+            call_id = existing_call["id"]
+        else:
+            call_id = db.insert_call({
+                "lead_id": lead_id,
+                "direction": call_context.get("direction", "inbound"),
+                "signalwire_call_id": call_sid,
+            })
         call_id_holder["call_id"] = call_id
         if lead_id:
             db.insert_call_event(call_id, lead_id, "call_started")
@@ -158,6 +165,7 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
         db.update_call_fields(call_id, {
             "call_disposition": disposition,
             "duration_seconds": duration_seconds,
+            "ended_at": datetime.now(UTC).isoformat(),
         })
         if lead_id:
             db.update_lead_call_outcome(lead_id, disposition or "completed")
@@ -165,5 +173,9 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
 
         from backend.voice.post_call_intel import run_post_call_intel
         run_post_call_intel(call_id, lead_id)
+
+        if lead_id and disposition:
+            from backend.alerts.followup import send_post_call_followup
+            send_post_call_followup(lead_id, call_id, disposition)
 
     logger.info("call_finished call_id={} lead_id={} disposition={}", call_id, lead_id, disposition)

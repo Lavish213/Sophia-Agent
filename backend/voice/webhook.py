@@ -6,10 +6,13 @@ from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 
+from backend.lib import db
 from backend.lib.config import get_settings
 from backend.voice.context import preload_call_context, preload_outbound_context
 
 router = APIRouter()
+
+_TERMINAL_NO_CONNECT_STATUSES = {"busy", "failed", "no-answer", "canceled"}
 
 
 def build_stream_url() -> str:
@@ -54,6 +57,27 @@ async def handle_outbound_connect(lead_id: str, request: Request):
 
     laml = build_connect_laml({"lead_id": lead_id})
     return PlainTextResponse(content=laml, media_type="text/xml")
+
+
+@router.post("/voice/status")
+async def handle_status_callback(request: Request):
+    form = await request.form()
+    call_sid = str(form.get("CallSid", ""))
+    call_status = str(form.get("CallStatus", ""))
+
+    logger.info("voice_status_callback call_sid={} status={}", call_sid, call_status)
+
+    if call_status not in _TERMINAL_NO_CONNECT_STATUSES or not call_sid:
+        return PlainTextResponse(content="ok")
+
+    updated = db.mark_call_terminal_if_unset(call_sid, call_status)
+    if updated:
+        call = db.get_call_by_signalwire_sid(call_sid)
+        if call and call.get("lead_id"):
+            from backend.alerts.followup import send_post_call_followup
+            send_post_call_followup(call["lead_id"], call["id"], call_status)
+
+    return PlainTextResponse(content="ok")
 
 
 @router.websocket("/voice/stream")

@@ -32,12 +32,20 @@ def place_outbound_call(lead_id: str) -> dict:
 
     public_url = settings.public_url.rstrip("/")
     webhook_url = f"{public_url}/api/voice/outbound/{lead_id}"
+    status_callback_url = f"{public_url}/api/voice/status"
 
     call = client.calls.create(
         to=lead["owner_phone"],
         from_=settings.signalwire_phone,
         url=webhook_url,
+        status_callback=status_callback_url,
     )
+
+    db.insert_call({
+        "lead_id": lead_id,
+        "direction": "outbound",
+        "signalwire_call_id": call.sid,
+    })
 
     logger.info("outbound_call_placed lead_id={} call_sid={}", lead_id, call.sid)
     return {"success": True, "call_sid": call.sid}

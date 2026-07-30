@@ -110,7 +110,11 @@ def test_handle_inbound_sms_start_opts_back_in(monkeypatch):
 def test_handle_inbound_sms_other_text_just_logged(monkeypatch):
     monkeypatch.setattr(db, "get_lead_by_owner_phone", lambda phone: _lead())
     logged = {}
-    monkeypatch.setattr(db, "insert_sms_message", lambda lead_id, direction, body, status="queued": logged.update(direction=direction, body=body))
+
+    def _fake_insert(lead_id, direction, body, status="queued"):
+        logged.update(direction=direction, body=body)
+
+    monkeypatch.setattr(db, "insert_sms_message", _fake_insert)
 
     action = handle_inbound_sms("2095551212", "Is this a good time to call back?")
 

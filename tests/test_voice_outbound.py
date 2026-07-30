@@ -61,9 +61,28 @@ def test_places_call_when_allowed(monkeypatch):
         lambda self, lead_id: ComplianceResult(allowed=True, reason="ok"),
     )
     monkeypatch.setattr(signalwire.rest, "Client", _FakeSignalwireClient)
+    recorded = {}
+    monkeypatch.setattr(db, "insert_call", lambda data: recorded.update(data) or "call-row-1")
 
     result = place_outbound_call("lead-1")
 
     assert result["success"] is True
     assert result["call_sid"] == "CA123"
     assert _FakeCalls.last_kwargs["to"] == "2095551212"
+    assert recorded["signalwire_call_id"] == "CA123"
+    assert recorded["direction"] == "outbound"
+
+
+def test_places_call_includes_status_callback(monkeypatch):
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead())
+    monkeypatch.setattr(
+        ComplianceEngine, "check_call_allowed",
+        lambda self, lead_id: ComplianceResult(allowed=True, reason="ok"),
+    )
+    monkeypatch.setattr(signalwire.rest, "Client", _FakeSignalwireClient)
+    monkeypatch.setattr(db, "insert_call", lambda data: "call-row-1")
+
+    place_outbound_call("lead-1")
+
+    assert "status_callback" in _FakeCalls.last_kwargs
+    assert _FakeCalls.last_kwargs["status_callback"].endswith("/api/voice/status")

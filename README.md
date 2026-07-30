@@ -245,8 +245,14 @@ new sellers by itself:
 ```bash
 pytest tests/ -q          # backend, bob, dialer, discovery
 ruff check backend/ bob/ dialer/ discovery/ tests/
-cd dashboard && npm run lint && npm run build
+cd dashboard && npm test && npm run lint && npm run build
 ```
+
+The dashboard's `npm test` covers the `/api/lead` route handler, which is
+the one piece of dashboard code holding a secret — it asserts the secret is
+forwarded to the backend but never appears in a response, that the honeypot
+silently absorbs bots, and that upstream errors don't leak detail to the
+browser.
 
 ### Testing the call flow without a phone
 

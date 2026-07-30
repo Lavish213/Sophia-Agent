@@ -4,10 +4,8 @@ uvicorn[standard]
 supabase
 
 anthropic
-deepgram-sdk
-
 signalwire
-pipecat-ai[cartesia,deepgram,silero,anthropic]
+pipecat-ai[deepgram,anthropic,silero,websocket]
 
 loguru
 python-dotenv

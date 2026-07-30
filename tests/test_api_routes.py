@@ -8,6 +8,35 @@ from backend.lib import db
 client = TestClient(app)
 
 
+def test_voice_inbound_returns_laml(monkeypatch):
+    from backend.lib.config import get_settings
+    monkeypatch.setenv("PUBLIC_URL", "https://sophia.example.com")
+    get_settings.cache_clear()
+    try:
+        resp = client.post("/api/voice/inbound", data={"From": "+12095551212", "To": "+12098814144", "CallSid": "CA1"})
+        assert resp.status_code == 200
+        assert "<Connect><Stream" in resp.text
+        assert "wss://sophia.example.com/api/voice/stream" in resp.text
+    finally:
+        get_settings.cache_clear()
+
+
+def test_trigger_outbound_call_route(monkeypatch):
+    import backend.api.routes.calls as calls_route
+    monkeypatch.setattr(calls_route, "place_outbound_call", lambda lead_id: {"success": True, "call_sid": "CA1"})
+    resp = client.post("/api/leads/lead-1/call")
+    assert resp.status_code == 200
+    assert resp.json()["call_sid"] == "CA1"
+
+
+def test_trigger_outbound_call_route_failure(monkeypatch):
+    import backend.api.routes.calls as calls_route
+    failure = {"success": False, "reason": "no_phone_on_file"}
+    monkeypatch.setattr(calls_route, "place_outbound_call", lambda lead_id: failure)
+    resp = client.post("/api/leads/lead-1/call")
+    assert resp.status_code == 422
+
+
 def test_health_ok(monkeypatch):
     monkeypatch.setattr(db, "health_check", lambda: True)
     resp = client.get("/api/health")

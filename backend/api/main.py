@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from backend.api.routes import calls, comps, health, leads, offers, properties
+from backend.voice.webhook import router as voice_router
 
 
 @asynccontextmanager
@@ -30,3 +31,4 @@ app.include_router(leads.router, prefix="/api")
 app.include_router(comps.router, prefix="/api")
 app.include_router(offers.router, prefix="/api")
 app.include_router(calls.router, prefix="/api")
+app.include_router(voice_router, prefix="/api")

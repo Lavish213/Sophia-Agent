@@ -8,9 +8,11 @@ Ground-up rebuild of an earlier prototype (Lavish213/rei-agent) after
 an audit found core paths silently broken. Scope: manual CSV lead
 import, comps/ARV/MAO calculation, a correctly-wired voice pipeline,
 a dialer that works an uploaded lead list on its own (calling, then
-SMS/email follow-up), and a dashboard. Automated lead scraping and
-elaborate live emotional-state tracking are deferred to a phase 2,
-once the core is proven on real calls.
+SMS/email follow-up), a discovery worker that finds sellers on its
+own by monitoring Reddit for seller-intent posts, and a dashboard.
+Broader automated lead scraping (RSS/court/eviction/CRMLS/cash-buyer)
+and elaborate live emotional-state tracking are deferred to a phase
+2, once the core is proven on real calls.
 
 ## OWNER
 Angelo Washington. Goes by Alanzo Alcarez for the business.
@@ -23,9 +25,12 @@ Business domain: sanjoaquinhousebuyers.com
 - SMS: SignalWire. Email: SendGrid.
 - Bob worker: standalone process, same repo, generates call briefs
 - Dialer worker: standalone process, same repo, batch outbound calling
+- Discovery worker: standalone process, same repo, polls Reddit
+  (PRAW) for seller-intent posts across San Joaquin-area + real
+  estate subreddits
 - Database: Supabase (Postgres), RLS enabled on every table
 - Dashboard: Next.js 14 (pinned), Tailwind, Supabase Auth + JS client
-- Hosting: Railway (backend + bob + dialer), Vercel (dashboard)
+- Hosting: Railway (backend + bob + dialer + discovery), Vercel (dashboard)
 - Phone/SMS: SignalWire only — never Twilio
 
 ## VOICE AGENT
@@ -69,13 +74,16 @@ backend/compliance/          → TCPA/DNC/calling-hours gate
 backend/voice/                → Pipecat pipeline + SignalWire + tools
 backend/voice/prompts/        → Sophia's system prompt (one file)
 backend/alerts/                → SMS (SignalWire) + email (SendGrid) + post-call follow-up
+backend/scout/reddit.py        → Reddit intent-scoring + fetch logic (also used by discovery/)
+backend/scout/convert.py       → converts a reddit_match into a property/contact/lead
 backend/api/                    → FastAPI route handlers
 bob/                             → standalone call-brief worker process
 dialer/                           → standalone batch-outbound-calling worker process
+discovery/                        → standalone Reddit-lead-discovery worker process
 dashboard/                         → Next.js app, Supabase Auth
 scripts/                            → one-off scripts, never imported by backend
 supabase/migrations/                 → schema files only
-tests/                                 → pytest coverage for backend/*, bob/, dialer/
+tests/                                 → pytest coverage for backend/*, bob/, dialer/, discovery/
 
 ## DATABASE TABLES
 properties          → cached distressed properties (no phone numbers)
@@ -92,6 +100,7 @@ decision_records     → audit trail of bob's call-brief decisions
 seller_memory        → durable per-lead facts read at call start
 sms_messages         → outbound + inbound SMS log
 email_messages       → outbound + inbound email log
+reddit_matches       → raw Reddit posts scored for seller intent, pre-lead
 
 ## OUTBOUND / FOLLOW-UP BEHAVIOR
 Dropping a CSV in only ingests it — nothing is called, texted, or
@@ -110,9 +119,27 @@ opted_out/email_opted_out immediately before sending, not just at
 dial time. Inbound SMS handles STOP/START itself; there is no
 separate DNC sync step required for that.
 
+## LEAD DISCOVERY (REDDIT)
+The discovery worker (discovery/main.py) runs on its own schedule
+(REDDIT_POLL_INTERVAL_MINUTES), calls backend/scout/reddit.fetch_matches()
+to pull new posts from a fixed list of San Joaquin-area + real-estate
+subreddits, scores each for seller intent (hot/warm/cold/none) via
+keyword matching, and inserts new ones into reddit_matches (deduped
+by reddit_id). Reddit never gives a phone number, so a match is NOT a
+lead and nothing is called/texted/emailed off it automatically — it
+shows up on the dashboard's /discovered page for a human to review,
+find contact info for (e.g. replying to the post), and convert via
+POST /api/discovery/reddit-matches/{id}/convert, which creates a
+property + contact + lead (backend/scout/convert.py) and links the
+match back to it. Once converted, that lead flows through the normal
+dialer → call → follow-up pipeline exactly like a CSV-imported lead.
+Without REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET configured, the
+discovery worker degrades to a no-op (get_reddit_client() returns
+None) rather than erroring.
+
 ## BUILD ORDER
 1. backend/lib/config.py + db.py     ← START HERE
-2. supabase/migrations/0001_init.sql, 0002_outreach.sql
+2. supabase/migrations/0001_init.sql, 0002_outreach.sql, 0003_discovery.sql
 3. backend/scout/parser.py + scorer.py
 4. backend/comps/calculator.py
 5. backend/compliance/compliance.py
@@ -121,5 +148,6 @@ separate DNC sync step required for that.
 8. backend/alerts/sms.py + email.py + followup.py
 9. bob/ worker
 10. dialer/ worker
-11. dashboard/ (Next.js)
-12. Railway (3 processes) + Vercel deployment
+11. backend/scout/reddit.py + convert.py, discovery/ worker
+12. dashboard/ (Next.js)
+13. Railway (4 processes) + Vercel deployment

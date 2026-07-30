@@ -4,7 +4,8 @@ AI voice acquisitions agent for San Joaquin House Buyers. Sophia calls and
 receives calls from distressed-property sellers, qualifies them, and books
 walkthroughs — then the dialer and follow-up workers take it from there:
 working an uploaded lead list, calling it, and following up by text and
-email. Ground-up rebuild of an earlier prototype
+email. A discovery worker finds sellers on its own by monitoring Reddit
+for seller-intent posts. Ground-up rebuild of an earlier prototype
 ([`Lavish213/rei-agent`](https://github.com/Lavish213/rei-agent)) after an
 audit found several core paths silently broken — see `AGENTS.md` for the
 project's hard rules and full scope.
@@ -16,9 +17,10 @@ project's hard rules and full scope.
 - SMS: SignalWire. Email: SendGrid.
 - Bob worker: a second process that generates call briefs ahead of time
 - Dialer worker: a third process that works an uploaded lead list on its own
+- Discovery worker: a fourth process that finds sellers on Reddit on its own
 - Database: Supabase (Postgres), Row Level Security on every table
 - Dashboard: Next.js 14 (pinned), Tailwind, Supabase Auth
-- Hosting: Railway (backend + bob + dialer), Vercel (dashboard)
+- Hosting: Railway (backend + bob + dialer + discovery), Vercel (dashboard)
 
 ## One-time setup
 
@@ -26,7 +28,8 @@ project's hard rules and full scope.
 
 1. Create a new Supabase project.
 2. Open the SQL Editor and run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_outreach.sql`, in that order.
+   `supabase/migrations/0002_outreach.sql`, then
+   `supabase/migrations/0003_discovery.sql`, in that order.
 3. Under Authentication → Users, create the one operator account (email +
    password) that will sign into the dashboard. This is a single-operator
    tool — there's no self-serve signup.
@@ -49,7 +52,17 @@ project's hard rules and full scope.
 Create a SendGrid account, verify a sending domain or single sender address,
 and generate an API key. That address becomes `FROM_EMAIL`.
 
-### 4. Backend environment
+### 4. Reddit (optional — powers automatic lead discovery)
+
+1. Create a Reddit account (or use an existing one) and register an app at
+   https://www.reddit.com/prefs/apps — choose type "script".
+2. Note the client ID (under the app name) and client secret.
+3. Set `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, and `REDDIT_USER_AGENT`
+   (a descriptive string, e.g. `sophia-agent:v1 (by u/yourusername)`) in
+   `.env`. Without these, the discovery worker runs as a no-op — nothing
+   breaks, it just never finds anything.
+
+### 5. Backend environment
 
 Copy `.env.example` to `.env` and fill in every value — `SUPABASE_URL`,
 `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `DEEPGRAM_API_KEY`,
@@ -65,12 +78,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pytest tests/ -q
-ruff check backend/ bob/ dialer/ tests/
+ruff check backend/ bob/ dialer/ discovery/ tests/
 ```
 
-### 5. Deploy the backend (Railway)
+### 6. Deploy the backend (Railway)
 
-This repo runs three processes from the same codebase (`Procfile`):
+This repo runs four processes from the same codebase (`Procfile`):
 
 - `web` — the FastAPI app (`uvicorn backend.api.main:app`), handles the REST
   API, the SignalWire voice/SMS webhooks, and the media websocket.
@@ -82,17 +95,22 @@ This repo runs three processes from the same codebase (`Procfile`):
   places them, one at a time, up to `MAX_CONCURRENT_OUTBOUND` calls in
   flight at once (tracked in the database, not in memory, so it survives a
   restart and can't leak — see "Outbound calling" below).
+- `discovery` — the Reddit lead-discovery worker (`python -m discovery.main`),
+  polls every `REDDIT_POLL_INTERVAL_MINUTES` for new seller-intent posts and
+  stores them as `reddit_matches` for manual review (see "Lead discovery"
+  below).
 
-Railway needs these as three separate services pointing at the same repo
+Railway needs these as four separate services pointing at the same repo
 (one per Procfile process type — `railway.json` configures the `web`
-service; create two more services for `worker` and `dialer` with their
-start commands set to `python -m bob.main` and `python -m dialer.main`
-respectively). Set the full `.env` on all three services.
+service; create three more services for `worker`, `dialer`, and `discovery`
+with their start commands set to `python -m bob.main`,
+`python -m dialer.main`, and `python -m discovery.main` respectively). Set
+the full `.env` on all four services.
 
 Once deployed, set `PUBLIC_URL` to the `web` service's Railway domain and
 redeploy, then finish the SignalWire webhook setup from step 2.
 
-### 6. Deploy the dashboard (Vercel)
+### 7. Deploy the dashboard (Vercel)
 
 ```bash
 cd dashboard
@@ -137,11 +155,34 @@ picks leads up from there, on its own schedule:
    at dial time. Replying STOP to a text sets `opted_out` and stops both
    future calls and texts for that lead; replying START clears it.
 
+## Lead discovery — how Sophia finds leads on her own
+
+Besides working leads you drop in as a CSV, the `discovery` worker finds
+new sellers by itself:
+
+1. Every `REDDIT_POLL_INTERVAL_MINUTES`, it checks a fixed list of San
+   Joaquin-area subreddits (Stockton, Lodi, SanJoaquin) plus general
+   real-estate/landlord/foreclosure/divorce subreddits for new posts.
+2. Each post is scored for seller intent by keyword (hot/warm/cold/none —
+   e.g. "need to sell fast" + "foreclosure" scores hot); anything below the
+   threshold is skipped.
+3. New matches (deduped by Reddit post ID) are stored in `reddit_matches`
+   and show up on the dashboard's **Discovered** page, newest/hottest first.
+4. Reddit never exposes a phone number, so a discovered match is **not** a
+   lead yet and nothing is called, texted, or emailed automatically off it.
+   A human reviews the post, finds contact info (typically by replying to
+   the poster), and clicks **Convert to lead** — that creates a real
+   property/contact/lead record. From that point on it's indistinguishable
+   from a CSV-imported lead and flows through the same dialer → call →
+   follow-up pipeline described above.
+5. Without `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` set, the worker is a
+   safe no-op — it logs nothing found rather than erroring.
+
 ## Testing
 
 ```bash
-pytest tests/ -q          # 140 tests: backend, bob, dialer
-ruff check backend/ bob/ dialer/ tests/
+pytest tests/ -q          # backend, bob, dialer, discovery
+ruff check backend/ bob/ dialer/ discovery/ tests/
 cd dashboard && npm run lint && npm run build
 ```
 
@@ -149,13 +190,16 @@ Everything above runs and is verified without live provider credentials.
 **Placing or receiving an actual phone call, text, or email requires real
 SignalWire, Deepgram, Anthropic, and SendGrid credentials plus a working
 `PUBLIC_URL`** — that path can only be exercised against a real deployment,
-not in an offline sandbox.
+not in an offline sandbox. Reddit discovery requires real
+`REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET` to find anything, but degrades
+safely without them.
 
 ## What's in this MVP vs. deferred
 
 CSV lead import, comps/ARV/MAO calculation, the voice pipeline, batch
 outbound calling with SMS/email follow-up, post-call intelligence
-extraction, Bob's call-brief worker, and the dashboard are all live.
-Automated lead-sourcing scrapers and the old repo's elaborate live
-trust/resistance/emotional-state tracking are deferred to a phase 2, once
-this core is proven on real calls.
+extraction, Bob's call-brief worker, Reddit-based lead discovery, and the
+dashboard are all live. Broader automated lead-sourcing scrapers (RSS,
+court records, eviction filings, CRMLS, cash-buyer lists) and the old
+repo's elaborate live trust/resistance/emotional-state tracking are
+deferred to a phase 2, once this core is proven on real calls.

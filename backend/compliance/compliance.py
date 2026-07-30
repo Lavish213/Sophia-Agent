@@ -24,6 +24,21 @@ def is_calling_hours(now: datetime | None = None) -> bool:
     return settings.calling_hours_start <= check_time.hour < settings.calling_hours_end
 
 
+def is_calling_hours_for_phone(phone: str | None, now: datetime | None = None) -> bool:
+    import pytz
+
+    from backend.compliance.timezones import zones_to_check
+
+    settings = get_settings()
+    reference = now or datetime.now(pytz.utc)
+
+    for zone_name in zones_to_check(phone):
+        local = reference.astimezone(pytz.timezone(zone_name))
+        if not settings.calling_hours_start <= local.hour < settings.calling_hours_end:
+            return False
+    return True
+
+
 class ComplianceEngine:
     def check_call_allowed(self, lead_id: str) -> ComplianceResult:
         try:
@@ -34,7 +49,7 @@ class ComplianceEngine:
                 return ComplianceResult(allowed=False, reason="opted_out")
             if lead.get("dnc_blocked"):
                 return ComplianceResult(allowed=False, reason="dnc_blocked")
-            if not is_calling_hours():
+            if not is_calling_hours_for_phone(lead.get("owner_phone")):
                 return ComplianceResult(allowed=False, reason="outside_hours")
 
             for phone in (lead.get("owner_phone"), lead.get("owner_phone_2")):
@@ -56,6 +71,14 @@ class ComplianceEngine:
                 return ComplianceResult(allowed=False, reason="opted_out")
             if lead.get("dnc_blocked"):
                 return ComplianceResult(allowed=False, reason="dnc_blocked")
+            if not is_calling_hours_for_phone(lead.get("owner_phone")):
+                return ComplianceResult(allowed=False, reason="outside_hours")
+
+            for phone in (lead.get("owner_phone"), lead.get("owner_phone_2")):
+                if phone and db.is_on_dnc_list(phone):
+                    logger.info("sms_dnc_match lead_id={} phone={}", lead_id, phone)
+                    return ComplianceResult(allowed=False, reason="dnc_list_match")
+
             return ComplianceResult(allowed=True, reason="ok")
         except Exception as e:
             logger.exception("sms_compliance_check_failed lead_id={} error={}", lead_id, str(e))

@@ -248,6 +248,39 @@ ruff check backend/ bob/ dialer/ discovery/ tests/
 cd dashboard && npm run lint && npm run build
 ```
 
+### Testing the call flow without a phone
+
+`tests/test_voice_call_flow.py` drives the real webhook endpoints with the
+same form payloads SignalWire posts, and parses the returned LaML as XML. It
+covers the branches that decide what actually happens on a call: a human
+gets the live audio stream, a finished voicemail greeting gets a spoken
+message then a hangup, a greeting still in progress hangs up rather than
+talking over it, fax hangs up, and a capped lead gets nothing. Malformed
+LaML makes SignalWire drop the call with no useful error, so these assert
+the XML parses rather than just checking for substrings.
+
+`tests/test_voice_pipeline_assembly.py` constructs the real Deepgram,
+Anthropic, and Pipecat objects with throwaway API keys and assembles the
+actual pipeline. It never makes a network call — the point is to catch
+Pipecat API drift on upgrade, which otherwise only shows up mid-call.
+
+### Your first real call
+
+Everything above runs offline. Placing an actual call needs live
+credentials, so when you have them:
+
+1. Deploy, set `PUBLIC_URL` to the `web` service's real domain, and confirm
+   `/api/health` reports `supabase: ok` and the providers as `configured`.
+2. Point the SignalWire number's voice webhook at `/api/voice/inbound` and
+   **call it yourself first.** Inbound is the safer test — it exercises the
+   stream, the transport, and the prompt without dialing a stranger.
+3. Then trigger one outbound call to your own phone from a lead row, and
+   let it go to voicemail on purpose. That single call exercises machine
+   detection, the voicemail script, and the follow-up text in one pass.
+4. Watch `MACHINE_DETECTION_TIMEOUT_SECONDS` (default 30). It's the setting
+   most likely to need tuning for your market — too low clips greetings,
+   too high delays live answers.
+
 Everything above runs and is verified without live provider credentials.
 **Placing or receiving an actual phone call, text, or email requires real
 SignalWire, Deepgram, Anthropic, and SendGrid credentials plus a working

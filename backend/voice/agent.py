@@ -149,6 +149,7 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
 
         greeting_instruction = (
             f"The caller's first name is {call_context.get('owner_first_name', 'there')}. "
+            f"{call_context.get('caller_awareness_str', '')} "
             f"{call_context.get('property_context_str', '')} "
             "Start the call by greeting them naturally and, if you have a property on file, "
             "referencing it briefly. If you don't recognize them, greet them and ask how you can help."

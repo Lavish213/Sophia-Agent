@@ -39,6 +39,8 @@ def place_outbound_call(lead_id: str) -> dict:
         from_=settings.signalwire_phone,
         url=webhook_url,
         status_callback=status_callback_url,
+        machine_detection="DetectMessageEnd",
+        machine_detection_timeout=settings.machine_detection_timeout_seconds,
     )
 
     db.insert_call({

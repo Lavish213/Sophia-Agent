@@ -268,6 +268,18 @@ def mark_call_terminal_if_unset(signalwire_call_id: str, disposition: str) -> bo
     return updated
 
 
+def mark_followup_sent_if_unset(call_id: str) -> bool:
+    client = get_client()
+    response = (
+        client.table("calls")
+        .update({"followup_sent": True})
+        .eq("id", call_id)
+        .eq("followup_sent", False)
+        .execute()
+    )
+    return bool(response.data)
+
+
 def count_active_calls(max_age_minutes: int = 30) -> int:
     client = get_client()
     cutoff = (datetime.now(UTC) - timedelta(minutes=max_age_minutes)).isoformat()

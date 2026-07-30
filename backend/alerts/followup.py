@@ -9,6 +9,7 @@ from backend.lib.config import get_settings
 
 _NO_ANSWER_DISPOSITIONS = {"no-answer", "busy", "failed"}
 _CONVERSATION_DISPOSITIONS = {"HOT", "WARM", "COLD", "DEAD"}
+_VOICEMAIL_DISPOSITIONS = {"voicemail"}
 
 
 def _no_answer_sms_body() -> str:
@@ -28,6 +29,15 @@ def _no_answer_email_body(first_name: str) -> str:
         "about your property but wasn't able to connect. If you're open to a quick "
         "conversation about a potential cash offer, feel free to call or text this "
         f"number back, or just reply to this email.\n\nThanks,\nSophia"
+    )
+
+
+def _voicemail_sms_body() -> str:
+    settings = get_settings()
+    return (
+        f"Hey, this is Sophia with {settings.business_name} — just left you a voicemail "
+        "about your property. No pressure at all, but if you're curious what we could offer, "
+        "just text me back here. Reply STOP to stop texts."
     )
 
 
@@ -54,6 +64,11 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
         return {"sms": None, "email": None}
 
     results: dict = {"sms": None, "email": None}
+
+    if disposition in _VOICEMAIL_DISPOSITIONS:
+        if lead.get("owner_phone"):
+            results["sms"] = send_sms(lead_id, _voicemail_sms_body())
+        return results
 
     if disposition in _NO_ANSWER_DISPOSITIONS:
         if lead.get("owner_phone"):

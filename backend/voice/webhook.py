@@ -50,10 +50,39 @@ async def handle_inbound_call(request: Request):
 
 @router.post("/voice/outbound/{lead_id}")
 async def handle_outbound_connect(lead_id: str, request: Request):
+    from backend.voice import voicemail
+
     form = await request.form()
     call_sid = str(form.get("CallSid", ""))
+    answered_by = str(form.get("AnsweredBy", ""))
 
-    logger.info("voice_outbound_connect lead_id={} call_sid={}", lead_id, call_sid)
+    logger.info(
+        "voice_outbound_connect lead_id={} call_sid={} answered_by={}", lead_id, call_sid, answered_by
+    )
+
+    if voicemail.is_unusable(answered_by):
+        logger.info("voice_outbound_unusable lead_id={} answered_by={}", lead_id, answered_by)
+        return PlainTextResponse(content=voicemail.build_hangup_laml(), media_type="text/xml")
+
+    if voicemail.is_machine(answered_by):
+        if not voicemail.should_leave_voicemail(answered_by):
+            return PlainTextResponse(content=voicemail.build_hangup_laml(), media_type="text/xml")
+
+        lead = db.get_lead_with_property(lead_id)
+
+        if not voicemail.voicemail_allowed(lead):
+            logger.info("voicemail_cap_reached lead_id={}", lead_id)
+            return PlainTextResponse(content=voicemail.build_hangup_laml(), media_type="text/xml")
+
+        attempt = ((lead or {}).get("voicemail_count") or 0) + 1
+        script = voicemail.build_voicemail_script(lead, attempt)
+
+        call = db.get_call_by_signalwire_sid(call_sid) if call_sid else None
+        voicemail.record_voicemail_left(call["id"] if call else None, lead_id, script, lead)
+
+        return PlainTextResponse(
+            content=voicemail.build_voicemail_laml(script), media_type="text/xml"
+        )
 
     laml = build_connect_laml({"lead_id": lead_id})
     return PlainTextResponse(content=laml, media_type="text/xml")
@@ -67,13 +96,24 @@ async def handle_status_callback(request: Request):
 
     logger.info("voice_status_callback call_sid={} status={}", call_sid, call_status)
 
-    if call_status not in _TERMINAL_NO_CONNECT_STATUSES or not call_sid:
+    if not call_sid:
+        return PlainTextResponse(content="ok")
+
+    if call_status == "completed":
+        call = db.get_call_by_signalwire_sid(call_sid)
+        is_voicemail = bool(call and call.get("voicemail_left") and call.get("lead_id"))
+        if is_voicemail and db.mark_followup_sent_if_unset(call["id"]):
+            from backend.alerts.followup import send_post_call_followup
+            send_post_call_followup(call["lead_id"], call["id"], "voicemail")
+        return PlainTextResponse(content="ok")
+
+    if call_status not in _TERMINAL_NO_CONNECT_STATUSES:
         return PlainTextResponse(content="ok")
 
     updated = db.mark_call_terminal_if_unset(call_sid, call_status)
     if updated:
         call = db.get_call_by_signalwire_sid(call_sid)
-        if call and call.get("lead_id"):
+        if call and call.get("lead_id") and db.mark_followup_sent_if_unset(call["id"]):
             from backend.alerts.followup import send_post_call_followup
             send_post_call_followup(call["lead_id"], call["id"], call_status)
 

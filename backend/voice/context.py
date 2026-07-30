@@ -50,10 +50,59 @@ def build_property_context_str(lead: dict) -> str:
     return " ".join(lines)
 
 
+def build_caller_awareness_str(lead: dict | None, direction: str, is_new_contact: bool = False) -> str:
+    if direction == "inbound" and (lead is None or is_new_contact):
+        return (
+            "This is an inbound call from a number that has never been contacted before. "
+            "You do not know who this is or which property they are calling about. "
+            "Do not pretend to recognize them, and do not claim you called them. "
+            "Ask who you're speaking with and how you can help."
+        )
+
+    lead = lead or {}
+    lines = []
+
+    attempts = lead.get("call_attempts") or 0
+    voicemails = lead.get("voicemail_count") or 0
+    last_outcome = lead.get("last_call_outcome")
+
+    if direction == "inbound":
+        lines.append("This person is calling you back.")
+        if voicemails:
+            lines.append(
+                f"You left them {voicemails} voicemail(s), so they are most likely returning that. "
+                "Thank them for calling back."
+            )
+        elif attempts:
+            lines.append(f"You have tried reaching them {attempts} time(s) before.")
+    else:
+        if attempts:
+            lines.append(f"This is outbound attempt number {attempts + 1} for this lead.")
+        if voicemails:
+            lines.append(
+                f"You have already left {voicemails} voicemail(s), "
+                "so do not re-introduce yourself from scratch."
+            )
+
+    if last_outcome:
+        lines.append(f"The last call ended as: {last_outcome}.")
+
+    if lead.get("opted_out"):
+        lines.append(
+            "This person previously opted out of texts. Do not offer to text them unless they ask."
+        )
+
+    if not lines:
+        lines.append("You have not spoken with this person before.")
+
+    return " ".join(lines)
+
+
 def preload_call_context(caller_phone: str) -> dict:
     from backend.scout.intake import find_existing_lead, intake_lead
 
     lead = find_existing_lead(caller_phone) if caller_phone else None
+    is_new_contact = False
 
     if not lead and caller_phone:
         result = intake_lead(
@@ -63,6 +112,7 @@ def preload_call_context(caller_phone: str) -> dict:
         )
         if result["success"] and result["lead_id"]:
             lead = db.get_lead_with_property(result["lead_id"])
+            is_new_contact = result.get("created", False)
             logger.info("preload_call_context_created_lead phone={} lead_id={}", caller_phone, result["lead_id"])
 
     if not lead:
@@ -74,6 +124,7 @@ def preload_call_context(caller_phone: str) -> dict:
             "property_context_str": (
                 "No property on file for this caller. Greet naturally and find out why they're calling."
             ),
+            "caller_awareness_str": build_caller_awareness_str(None, "inbound", True),
         }
 
     owner_name = lead.get("properties", {}).get("owner_name") if lead.get("properties") else None
@@ -84,6 +135,7 @@ def preload_call_context(caller_phone: str) -> dict:
         "lead_id": lead["id"],
         "owner_first_name": first_name or "there",
         "property_context_str": build_property_context_str(lead),
+        "caller_awareness_str": build_caller_awareness_str(lead, "inbound", is_new_contact),
     }
 
 
@@ -99,6 +151,7 @@ def preload_outbound_context(lead_id: str) -> dict:
             "property_context_str": (
                 "No property on file. Greet naturally and confirm you're speaking with the property owner."
             ),
+            "caller_awareness_str": build_caller_awareness_str(None, "outbound"),
         }
 
     owner_name = (lead.get("properties") or {}).get("owner_name")
@@ -109,4 +162,5 @@ def preload_outbound_context(lead_id: str) -> dict:
         "lead_id": lead["id"],
         "owner_first_name": first_name or "there",
         "property_context_str": build_property_context_str(lead),
+        "caller_awareness_str": build_caller_awareness_str(lead, "outbound"),
     }

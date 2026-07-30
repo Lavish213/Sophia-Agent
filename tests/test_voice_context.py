@@ -1,5 +1,10 @@
 from backend.lib import db
-from backend.voice.context import build_property_context_str, preload_call_context, preload_outbound_context
+from backend.voice.context import (
+    build_caller_awareness_str,
+    build_property_context_str,
+    preload_call_context,
+    preload_outbound_context,
+)
 
 
 def _lead(**overrides):
@@ -101,3 +106,34 @@ def test_preload_outbound_context_missing_lead(monkeypatch):
     ctx = preload_outbound_context("missing")
     assert ctx["lead"] is None
     assert ctx["lead_id"] == "missing"
+
+
+def test_caller_awareness_unknown_inbound_tells_her_not_to_pretend():
+    text = build_caller_awareness_str(None, "inbound", True)
+    assert "never been contacted" in text
+    assert "Do not pretend to recognize them" in text
+
+
+def test_caller_awareness_inbound_callback_after_voicemail():
+    lead = {"call_attempts": 2, "voicemail_count": 1}
+    text = build_caller_awareness_str(lead, "inbound")
+    assert "calling you back" in text
+    assert "voicemail" in text
+
+
+def test_caller_awareness_outbound_counts_attempt():
+    lead = {"call_attempts": 2, "voicemail_count": 1}
+    text = build_caller_awareness_str(lead, "outbound")
+    assert "attempt number 3" in text
+    assert "do not re-introduce yourself" in text
+
+
+def test_caller_awareness_flags_opted_out_lead():
+    lead = {"call_attempts": 1, "opted_out": True}
+    text = build_caller_awareness_str(lead, "outbound")
+    assert "opted out of texts" in text
+
+
+def test_caller_awareness_fresh_lead_has_no_history():
+    text = build_caller_awareness_str({}, "outbound")
+    assert "have not spoken with this person before" in text

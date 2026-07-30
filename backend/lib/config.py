@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     intake_webhook_secret: str = ""
     intake_auto_call: bool = False
 
+    machine_detection_timeout_seconds: int = 30
+    voicemail_voice: str = ""
+    max_voicemails_per_lead: int = 3
+
     batchdata_api_key: str = ""
     skiptrace_batch_size: int = 25
 

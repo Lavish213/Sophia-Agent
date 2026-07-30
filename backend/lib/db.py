@@ -207,6 +207,46 @@ def get_call_by_id(call_id: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
+def get_call_by_signalwire_sid(signalwire_call_id: str) -> dict | None:
+    client = get_client()
+    response = (
+        client.table("calls")
+        .select("*")
+        .eq("signalwire_call_id", signalwire_call_id)
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def mark_call_terminal_if_unset(signalwire_call_id: str, disposition: str) -> bool:
+    client = get_client()
+    response = (
+        client.table("calls")
+        .update({"call_disposition": disposition, "ended_at": _now()})
+        .eq("signalwire_call_id", signalwire_call_id)
+        .is_("call_disposition", "null")
+        .execute()
+    )
+    updated = bool(response.data)
+    if updated:
+        logger.info("call_marked_terminal signalwire_call_id={} disposition={}", signalwire_call_id, disposition)
+    return updated
+
+
+def count_active_calls(max_age_minutes: int = 30) -> int:
+    client = get_client()
+    cutoff = (datetime.now(UTC) - timedelta(minutes=max_age_minutes)).isoformat()
+    response = (
+        client.table("calls")
+        .select("id", count="exact")
+        .is_("ended_at", "null")
+        .gte("created_at", cutoff)
+        .execute()
+    )
+    return response.count or 0
+
+
 def get_calls_for_lead(lead_id: str) -> list[dict]:
     client = get_client()
     response = (
@@ -458,3 +498,50 @@ def health_check() -> bool:
     client = get_client()
     client.table("leads").select("id").limit(1).execute()
     return True
+
+
+def insert_sms_message(
+    lead_id: str, direction: str, body: str,
+    signalwire_message_sid: str | None = None, status: str = "queued",
+) -> str | None:
+    client = get_client()
+    response = client.table("sms_messages").insert({
+        "lead_id": lead_id,
+        "direction": direction,
+        "body": body,
+        "signalwire_message_sid": signalwire_message_sid,
+        "status": status,
+    }).execute()
+    sms_id = response.data[0]["id"] if response.data else None
+    logger.info("insert_sms_message lead_id={} direction={} id={}", lead_id, direction, sms_id)
+    return sms_id
+
+
+def get_sms_messages_for_lead(lead_id: str) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("sms_messages")
+        .select("*")
+        .eq("lead_id", lead_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
+def insert_email_message(
+    lead_id: str, direction: str, subject: str, body: str,
+    provider_message_id: str | None = None, status: str = "queued",
+) -> str | None:
+    client = get_client()
+    response = client.table("email_messages").insert({
+        "lead_id": lead_id,
+        "direction": direction,
+        "subject": subject,
+        "body": body,
+        "provider_message_id": provider_message_id,
+        "status": status,
+    }).execute()
+    email_id = response.data[0]["id"] if response.data else None
+    logger.info("insert_email_message lead_id={} direction={} id={}", lead_id, direction, email_id)
+    return email_id

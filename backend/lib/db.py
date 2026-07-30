@@ -546,3 +546,50 @@ def insert_email_message(
     email_id = response.data[0]["id"] if response.data else None
     logger.info("insert_email_message lead_id={} direction={} id={}", lead_id, direction, email_id)
     return email_id
+
+
+def get_reddit_match_by_reddit_id(reddit_id: str) -> dict | None:
+    client = get_client()
+    response = (
+        client.table("reddit_matches")
+        .select("id")
+        .eq("reddit_id", reddit_id)
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def insert_reddit_match(data: dict) -> str | None:
+    client = get_client()
+    response = client.table("reddit_matches").insert(data).execute()
+    match_id = response.data[0]["id"] if response.data else None
+    logger.info("insert_reddit_match reddit_id={} id={}", data.get("reddit_id"), match_id)
+    return match_id
+
+
+def list_reddit_matches(status: str | None = None, limit: int = 50) -> list[dict]:
+    client = get_client()
+    query = client.table("reddit_matches").select("*")
+    if status:
+        query = query.eq("status", status)
+    response = query.order("intent_score", desc=True).order("created_at", desc=True).limit(limit).execute()
+    return response.data
+
+
+def get_reddit_match_by_id(match_id: str) -> dict | None:
+    client = get_client()
+    response = client.table("reddit_matches").select("*").eq("id", match_id).limit(1).execute()
+    return response.data[0] if response.data else None
+
+
+def link_reddit_match_to_lead(match_id: str, lead_id: str) -> None:
+    client = get_client()
+    client.table("reddit_matches").update({"status": "converted", "lead_id": lead_id}).eq("id", match_id).execute()
+    logger.info("link_reddit_match_to_lead match_id={} lead_id={}", match_id, lead_id)
+
+
+def dismiss_reddit_match(match_id: str) -> None:
+    client = get_client()
+    client.table("reddit_matches").update({"status": "dismissed"}).eq("id", match_id).execute()
+    logger.info("dismiss_reddit_match match_id={}", match_id)

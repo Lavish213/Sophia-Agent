@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     dialer_batch_size: int = 10
     outbound_reattempt_hours: int = 20
 
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_user_agent: str = "sophia-agent:sjhb-monitor:v1.0"
+    reddit_poll_interval_minutes: int = 30
+    reddit_fetch_limit: int = 25
+
     environment: str = "development"
 
 

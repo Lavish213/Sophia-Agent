@@ -8,6 +8,59 @@ from backend.lib import db
 client = TestClient(app)
 
 
+def test_list_reddit_matches_route(monkeypatch):
+    monkeypatch.setattr(db, "list_reddit_matches", lambda status=None, limit=50: [{"id": "match-1"}])
+    resp = client.get("/api/discovery/reddit-matches")
+    assert resp.status_code == 200
+    assert resp.json() == [{"id": "match-1"}]
+
+
+def test_convert_reddit_match_route_success(monkeypatch):
+    import backend.api.routes.discovery as discovery_route
+    success = {"success": True, "lead_id": "lead-1", "property_id": "prop-1"}
+
+    def _fake_convert(match_id, address, owner_phone, **kwargs):
+        return success
+
+    monkeypatch.setattr(discovery_route, "convert_reddit_match_to_lead", _fake_convert)
+    body = {"address": "123 Main St", "owner_phone": "2095551212"}
+    resp = client.post("/api/discovery/reddit-matches/match-1/convert", json=body)
+    assert resp.status_code == 200
+    assert resp.json()["lead_id"] == "lead-1"
+
+
+def test_convert_reddit_match_route_failure(monkeypatch):
+    import backend.api.routes.discovery as discovery_route
+    failure = {"success": False, "reason": "match_not_found"}
+
+    def _fake_convert(match_id, address, owner_phone, **kwargs):
+        return failure
+
+    monkeypatch.setattr(discovery_route, "convert_reddit_match_to_lead", _fake_convert)
+    body = {"address": "123 Main St", "owner_phone": "2095551212"}
+    resp = client.post("/api/discovery/reddit-matches/missing/convert", json=body)
+    assert resp.status_code == 422
+
+
+def test_dismiss_reddit_match_route_not_found(monkeypatch):
+    monkeypatch.setattr(db, "get_reddit_match_by_id", lambda match_id: None)
+    resp = client.post("/api/discovery/reddit-matches/missing/dismiss")
+    assert resp.status_code == 404
+
+
+def test_dismiss_reddit_match_route_success(monkeypatch):
+    monkeypatch.setattr(db, "get_reddit_match_by_id", lambda match_id: {"id": "match-1"})
+    called = {"count": 0}
+
+    def _fake_dismiss(match_id):
+        called["count"] += 1
+
+    monkeypatch.setattr(db, "dismiss_reddit_match", _fake_dismiss)
+    resp = client.post("/api/discovery/reddit-matches/match-1/dismiss")
+    assert resp.status_code == 200
+    assert called["count"] == 1
+
+
 def test_sms_inbound_stop_returns_confirmation(monkeypatch):
     import backend.api.routes.sms_webhook as sms_webhook_route
     monkeypatch.setattr(sms_webhook_route, "handle_inbound_sms", lambda from_number, body: "opted_out")

@@ -1,4 +1,8 @@
-from backend.voice.agent import extract_transcript_chunks_from_messages, load_system_prompt
+from backend.voice.agent import (
+    extract_transcript_chunks_from_messages,
+    load_system_prompt,
+    resolve_final_disposition,
+)
 
 
 def test_load_system_prompt_returns_sophia_persona():
@@ -40,3 +44,28 @@ def test_extract_transcript_chunks_skips_empty_text():
     ]
     chunks = extract_transcript_chunks_from_messages(messages)
     assert chunks == []
+
+
+def test_resolve_disposition_prefers_extracted_intel():
+    result = resolve_final_disposition({"disposition": "HOT"}, "WARM", True)
+    assert result == "HOT"
+
+
+def test_resolve_disposition_falls_back_to_tool_when_no_intel():
+    result = resolve_final_disposition(None, "COLD", True)
+    assert result == "COLD"
+
+
+def test_resolve_disposition_falls_back_to_tool_when_extraction_failed():
+    result = resolve_final_disposition({}, "DEAD", True)
+    assert result == "DEAD"
+
+
+def test_resolve_disposition_defaults_to_warm_when_seller_talked_but_no_classification():
+    result = resolve_final_disposition(None, None, True)
+    assert result == "WARM"
+
+
+def test_resolve_disposition_none_when_no_transcript_at_all():
+    result = resolve_final_disposition(None, None, False)
+    assert result is None

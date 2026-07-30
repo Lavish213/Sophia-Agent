@@ -117,4 +117,33 @@ def test_apply_call_intel_skips_lead_write_without_lead_id(monkeypatch):
 
 def test_run_post_call_intel_handles_errors_without_raising(monkeypatch):
     monkeypatch.setattr(db, "get_transcript_chunks", lambda call_id: (_ for _ in ()).throw(RuntimeError("db down")))
-    run_post_call_intel("call-1", "lead-1")
+    result = run_post_call_intel("call-1", "lead-1")
+    assert result is None
+
+
+def test_run_post_call_intel_returns_extracted_intel(monkeypatch):
+    intel = {
+        "disposition": "WARM",
+        "motivation_level": 5,
+        "call_summary": "Open to talking more.",
+        "next_best_action": "follow_up_call",
+    }
+    fake_response = _FakeResponse(content=[_FakeBlock(type="tool_use", name="record_call_intel", input=intel)])
+
+    def _fake_client(api_key):
+        return _FakeAnthropicClient(api_key, fake_response)
+
+    monkeypatch.setattr(anthropic, "Anthropic", _fake_client)
+    monkeypatch.setattr(db, "get_transcript_chunks", lambda call_id: _sample_transcript())
+    monkeypatch.setattr(db, "update_call_fields", lambda call_id, fields: None)
+    monkeypatch.setattr(db, "update_lead_fields", lambda lead_id, fields: None)
+
+    result = run_post_call_intel("call-1", "lead-1")
+
+    assert result["disposition"] == "WARM"
+
+
+def test_run_post_call_intel_returns_none_for_empty_transcript(monkeypatch):
+    monkeypatch.setattr(db, "get_transcript_chunks", lambda call_id: [])
+    result = run_post_call_intel("call-1", "lead-1")
+    assert result is None

@@ -47,6 +47,17 @@ def extract_transcript_chunks_from_messages(messages: list[dict]) -> list[dict]:
     return chunks
 
 
+def resolve_final_disposition(intel: dict | None, tool_disposition: str | None, has_transcript: bool) -> str | None:
+    extracted = (intel or {}).get("disposition")
+    if extracted:
+        return extracted
+    if tool_disposition:
+        return tool_disposition
+    if has_transcript:
+        return "WARM"
+    return None
+
+
 def build_pipeline_worker(transport, call_context: dict, on_end_call):
     from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.pipeline.pipeline import Pipeline
@@ -155,27 +166,32 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
 
     call_id = call_id_holder["call_id"]
     lead_id = call_context.get("lead_id")
-    disposition = end_disposition_holder["disposition"]
+    tool_disposition = end_disposition_holder["disposition"]
     started_at = started_at_holder["started_at"]
     duration_seconds = int((datetime.now(UTC) - started_at).total_seconds()) if started_at else None
 
     if call_id:
         chunks = extract_transcript_chunks_from_messages(context.messages)
         db.insert_transcript_chunks(call_id, lead_id, chunks)
+
+        from backend.voice.post_call_intel import run_post_call_intel
+        intel = run_post_call_intel(call_id, lead_id)
+
+        final_disposition = resolve_final_disposition(intel, tool_disposition, bool(chunks))
+
         db.update_call_fields(call_id, {
-            "call_disposition": disposition,
+            "call_disposition": final_disposition,
             "duration_seconds": duration_seconds,
             "ended_at": datetime.now(UTC).isoformat(),
         })
         if lead_id:
-            db.update_lead_call_outcome(lead_id, disposition or "completed")
-            db.insert_call_event(call_id, lead_id, "call_ended", {"disposition": disposition})
+            db.update_lead_call_outcome(lead_id, final_disposition or "completed")
+            db.insert_call_event(call_id, lead_id, "call_ended", {"disposition": final_disposition})
 
-        from backend.voice.post_call_intel import run_post_call_intel
-        run_post_call_intel(call_id, lead_id)
-
-        if lead_id and disposition:
+        if lead_id and final_disposition:
             from backend.alerts.followup import send_post_call_followup
-            send_post_call_followup(lead_id, call_id, disposition)
+            send_post_call_followup(lead_id, call_id, final_disposition)
 
-    logger.info("call_finished call_id={} lead_id={} disposition={}", call_id, lead_id, disposition)
+        logger.info("call_finished call_id={} lead_id={} disposition={}", call_id, lead_id, final_disposition)
+    else:
+        logger.info("call_finished_no_call_row lead_id={}", lead_id)

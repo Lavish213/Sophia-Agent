@@ -98,11 +98,13 @@ def apply_call_intel(call_id: str, lead_id: str | None, intel: dict) -> None:
     )
 
 
-def run_post_call_intel(call_id: str, lead_id: str | None) -> None:
+def run_post_call_intel(call_id: str, lead_id: str | None) -> dict | None:
     try:
         chunks = db.get_transcript_chunks(call_id)
         intel = extract_call_intel(chunks)
         if intel:
             apply_call_intel(call_id, lead_id, intel)
+        return intel
     except Exception as e:
         logger.exception("run_post_call_intel_failed call_id={} error={}", call_id, str(e))
+        return None

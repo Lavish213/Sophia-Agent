@@ -141,15 +141,16 @@ def update_lead_fields(lead_id: str, fields: dict) -> None:
     logger.debug("update_lead_fields lead_id={} fields={}", lead_id, list(fields.keys()))
 
 
-def get_leads_for_outbound(min_score: int = 50, limit: int = 25) -> list[dict]:
+def get_leads_for_outbound(min_score: int = 50, limit: int = 25, reattempt_hours: int = 72) -> list[dict]:
     client = get_client()
-    cutoff = (datetime.now(UTC) - timedelta(hours=72)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=reattempt_hours)).isoformat()
     response = (
         client.table("leads")
         .select("*, properties(*)")
         .eq("opted_out", False)
         .eq("callable", True)
         .eq("dnc_blocked", False)
+        .not_.in_("stage", ["closed", "dead"])
         .or_(f"last_called_at.lte.{cutoff},last_called_at.is.null")
         .execute()
     )

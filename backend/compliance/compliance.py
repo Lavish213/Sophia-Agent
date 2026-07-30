@@ -5,6 +5,7 @@ from datetime import datetime
 
 from loguru import logger
 
+import backend.lib.db as db
 from backend.lib.config import get_settings
 
 
@@ -26,9 +27,7 @@ def is_calling_hours(now: datetime | None = None) -> bool:
 class ComplianceEngine:
     def check_call_allowed(self, lead_id: str) -> ComplianceResult:
         try:
-            from backend.lib.db import get_lead_with_property, is_on_dnc_list
-
-            lead = get_lead_with_property(lead_id)
+            lead = db.get_lead_with_property(lead_id)
             if not lead:
                 return ComplianceResult(allowed=False, reason="lead_not_found")
             if lead.get("opted_out"):
@@ -39,7 +38,7 @@ class ComplianceEngine:
                 return ComplianceResult(allowed=False, reason="outside_hours")
 
             for phone in (lead.get("owner_phone"), lead.get("owner_phone_2")):
-                if phone and is_on_dnc_list(phone):
+                if phone and db.is_on_dnc_list(phone):
                     logger.info("dnc_match lead_id={} phone={}", lead_id, phone)
                     return ComplianceResult(allowed=False, reason="dnc_list_match")
 
@@ -50,9 +49,7 @@ class ComplianceEngine:
 
     def check_sms_allowed(self, lead_id: str) -> ComplianceResult:
         try:
-            from backend.lib.db import get_lead_with_property
-
-            lead = get_lead_with_property(lead_id)
+            lead = db.get_lead_with_property(lead_id)
             if not lead:
                 return ComplianceResult(allowed=False, reason="lead_not_found")
             if lead.get("opted_out"):

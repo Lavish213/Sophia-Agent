@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-from backend.lib.db import get_or_create_lead, insert_contact, update_lead_fields, upsert_property
+import backend.lib.db as db
 from backend.scout.scorer import calculate_distress_score
 
 
@@ -10,13 +10,13 @@ def ingest_property_row(row: dict) -> dict:
     contact = row.pop("contact", None) or {}
 
     row["distress_score"] = calculate_distress_score(row)
-    property_id = upsert_property(row)
+    property_id = db.upsert_property(row)
 
     if not property_id:
         return {"property_id": None, "lead_id": None, "distress_score": row["distress_score"], "deal_viable": row.get("deal_viable", False)}
 
     if contact.get("phone") or contact.get("email"):
-        insert_contact({
+        db.insert_contact({
             "property_id": property_id,
             "name": contact.get("name"),
             "phone": contact.get("phone"),
@@ -24,7 +24,7 @@ def ingest_property_row(row: dict) -> dict:
             "email": contact.get("email"),
         })
 
-    lead = get_or_create_lead(property_id)
+    lead = db.get_or_create_lead(property_id)
 
     lead_updates = {}
     if contact.get("phone") and not lead.get("owner_phone"):
@@ -34,7 +34,7 @@ def ingest_property_row(row: dict) -> dict:
     if contact.get("email") and not lead.get("owner_email"):
         lead_updates["owner_email"] = contact["email"]
     if lead_updates:
-        update_lead_fields(lead["id"], lead_updates)
+        db.update_lead_fields(lead["id"], lead_updates)
 
     return {
         "property_id": property_id,

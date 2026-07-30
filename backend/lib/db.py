@@ -184,7 +184,10 @@ def get_leads_for_outbound(min_score: int = 50, limit: int = 25, reattempt_hours
         .eq("callable", True)
         .eq("dnc_blocked", False)
         .not_.in_("stage", ["closed", "dead"])
+        .not_.is_("owner_phone", "null")
         .or_(f"last_called_at.lte.{cutoff},last_called_at.is.null")
+        .order("last_called_at", desc=False, nullsfirst=True)
+        .limit(max(limit * 20, 200))
         .execute()
     )
     results = [

@@ -91,7 +91,8 @@ tests/                                 → pytest coverage for backend/*, bob/, 
 properties          → cached distressed properties (no phone numbers)
 contacts             → skip-traced owner contact info
 leads                → active pipeline leads, one per property
-calls                → call records, transcripts, disposition, ended_at
+calls                → call records, transcripts, disposition, ended_at,
+                       voicemail_left, answered_by, followup_sent
 transcript_chunks    → per-utterance transcript rows for a call
 call_events          → structured event log for a call
 comps                → comparable sales entered per property
@@ -103,6 +104,27 @@ seller_memory        → durable per-lead facts read at call start
 sms_messages         → outbound + inbound SMS log
 email_messages       → outbound + inbound email log
 reddit_matches       → raw Reddit posts scored for seller intent, pre-lead
+
+## VOICEMAIL AND CALLER AWARENESS
+Every outbound call is placed with machine_detection="DetectMessageEnd",
+so the answer webhook is delayed until the greeting finishes and arrives
+with AnsweredBy. backend/voice/webhook.py branches on it: human goes to
+the live Pipecat pipeline, machine_end_* gets a spoken voicemail then
+hangup, machine_start hangs up (the greeting isn't done, so a message
+would be cut off), fax/unknown hangs up. Voicemail scripts vary by
+attempt and stop after MAX_VOICEMAILS_PER_LEAD.
+
+A voicemail call ends with CallStatus "completed", not a no-connect
+status, so the status handler has a separate branch for it. Both
+follow-up paths go through db.mark_followup_sent_if_unset, a conditional
+update that returns True only once — SignalWire can redeliver a status
+callback, and without that guard the lead gets the same text twice.
+
+backend/voice/context.py::build_caller_awareness_str tells Sophia the
+relationship state before she speaks: brand-new unknown caller (never
+pretend to recognize them), returning a voicemail, outbound attempt N, or
+previously opted out. Without it she greets a stranger like an old
+contact, which is the single most obvious tell that a bot is calling.
 
 ## OUTBOUND / FOLLOW-UP BEHAVIOR
 Dropping a CSV in only ingests it — nothing is called, texted, or

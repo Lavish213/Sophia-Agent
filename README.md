@@ -144,14 +144,22 @@ picks leads up from there, on its own schedule:
    3 leads, forever, until a restart.
 3. Each dial re-checks compliance (calling hours, opted-out, DNC) for that
    specific lead right before placing the call.
-4. When a call resolves — whether it connects and Sophia actually talks to
-   someone, or it never connects at all (no-answer/busy/failed, reported by
-   SignalWire's status callback) — `backend/alerts/followup.py` sends a
-   disposition-appropriate SMS and, if an email is on file, an email too.
-   HOT/WARM calls get a short confirmation/follow-up text; COLD/DEAD calls
-   get nothing (no pressure); a no-answer gets a "sorry we missed you" text
-   and email.
-5. Every send re-checks opt-out status immediately before sending, not just
+4. Every outbound call runs **answering-machine detection**. If a human
+   picks up, the call connects to Sophia's live pipeline. If it reaches
+   voicemail, she leaves a spoken message instead — the script is shorter
+   and less repetitive on the second and third attempt, and she stops
+   leaving them after `MAX_VOICEMAILS_PER_LEAD`. Fax and undetectable
+   answers hang up without burning a message.
+5. When a call resolves — whether it connects and Sophia actually talks to
+   someone, reaches voicemail, or never connects at all
+   (no-answer/busy/failed, reported by SignalWire's status callback) —
+   `backend/alerts/followup.py` sends a disposition-appropriate SMS and, if
+   an email is on file, an email too. HOT/WARM calls get a short
+   confirmation/follow-up text; a voicemail gets a "just left you a
+   voicemail" text; COLD/DEAD calls get nothing (no pressure); a no-answer
+   gets a "sorry we missed you" text and email. Follow-ups are guarded
+   against duplicate sends if SignalWire redelivers a status callback.
+6. Every send re-checks opt-out status immediately before sending, not just
    at dial time. Replying STOP to a text sets `opted_out` and stops both
    future calls and texts for that lead; replying START clears it.
 

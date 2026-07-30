@@ -5,6 +5,7 @@ supabase
 
 anthropic
 signalwire
+sendgrid
 pipecat-ai[deepgram,anthropic,silero,websocket]
 
 loguru

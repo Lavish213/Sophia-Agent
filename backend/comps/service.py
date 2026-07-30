@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import backend.lib.db as db
 from backend.comps.calculator import calculate_arv
+from backend.lib import db
 
 
 def recalculate_arv_for_property(property_id: str) -> dict:

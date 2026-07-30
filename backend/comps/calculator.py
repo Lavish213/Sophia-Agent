@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -33,7 +33,7 @@ def _days_since(date_str):
         return None
     try:
         sold = datetime.fromisoformat(str(date_str).replace("Z", "+00:00"))
-        return (datetime.now(timezone.utc) - sold).days
+        return (datetime.now(UTC) - sold).days
     except Exception:
         return None
 

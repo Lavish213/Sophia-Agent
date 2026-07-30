@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -63,7 +63,7 @@ def _tax_delinquent_years(prop: dict) -> int:
     if tax_year is None:
         return 0
     try:
-        return max(0, datetime.now(timezone.utc).year - int(tax_year))
+        return max(0, datetime.now(UTC).year - int(tax_year))
     except (ValueError, TypeError):
         return 0
 
@@ -171,9 +171,7 @@ def _move_score(prop: dict) -> int:
     price_drops = prop.get("price_drop_count") or 0
     if dom >= 30 and price_drops >= 2:
         score += 15
-    elif dom >= 30:
-        score += 5
-    elif price_drops >= 2:
+    elif dom >= 30 or price_drops >= 2:
         score += 5
 
     return min(score, 30)
@@ -212,9 +210,7 @@ def _deal_score(prop: dict, arv: int) -> int:
         arv_dollars = arv / 100
         if 150000 <= arv_dollars <= 200000:
             score += 25
-        elif 120000 <= arv_dollars < 150000:
-            score += 18
-        elif 200000 < arv_dollars <= 225000:
+        elif 120000 <= arv_dollars < 150000 or 200000 < arv_dollars <= 225000:
             score += 18
         elif 80000 <= arv_dollars < 120000:
             score += 10

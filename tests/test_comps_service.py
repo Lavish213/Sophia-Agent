@@ -1,7 +1,7 @@
 import pytest
 
-import backend.lib.db as db
 from backend.comps.service import recalculate_arv_for_property
+from backend.lib import db
 
 
 def test_raises_for_missing_property(monkeypatch):

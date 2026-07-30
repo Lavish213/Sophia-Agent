@@ -1,9 +1,11 @@
+from datetime import UTC
+
 from backend.comps.calculator import calculate_arv
 
 
 def _comp(sold_price_dollars, sqft, days_ago=30, distance_miles=0.2):
-    from datetime import datetime, timedelta, timezone
-    sold_date = (datetime.now(timezone.utc) - timedelta(days=days_ago)).date().isoformat()
+    from datetime import datetime, timedelta
+    sold_date = (datetime.now(UTC) - timedelta(days=days_ago)).date().isoformat()
     return {
         "sold_price": sold_price_dollars * 100,
         "sqft": sqft,

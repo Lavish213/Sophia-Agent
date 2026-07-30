@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from loguru import logger
 
-import backend.lib.db as db
+from backend.lib import db
 from backend.scout.scorer import calculate_distress_score
 
 
@@ -13,7 +13,12 @@ def ingest_property_row(row: dict) -> dict:
     property_id = db.upsert_property(row)
 
     if not property_id:
-        return {"property_id": None, "lead_id": None, "distress_score": row["distress_score"], "deal_viable": row.get("deal_viable", False)}
+        return {
+            "property_id": None,
+            "lead_id": None,
+            "distress_score": row["distress_score"],
+            "deal_viable": row.get("deal_viable", False),
+        }
 
     if contact.get("phone") or contact.get("email"):
         db.insert_contact({

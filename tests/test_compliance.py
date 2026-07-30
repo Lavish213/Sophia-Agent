@@ -2,8 +2,8 @@ from datetime import datetime
 
 import pytz
 
-import backend.lib.db as db
 from backend.compliance.compliance import ComplianceEngine, is_calling_hours
+from backend.lib import db
 
 
 def _lead(**overrides):

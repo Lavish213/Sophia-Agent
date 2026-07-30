@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
 from loguru import logger
-from supabase import create_client, Client
 
 from backend.lib.config import get_settings
+from supabase import Client, create_client
 
 
 @lru_cache(maxsize=1)
@@ -18,7 +18,7 @@ def get_client() -> Client:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def upsert_property(data: dict) -> str | None:
@@ -143,7 +143,7 @@ def update_lead_fields(lead_id: str, fields: dict) -> None:
 
 def get_leads_for_outbound(min_score: int = 50, limit: int = 25) -> list[dict]:
     client = get_client()
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(hours=72)).isoformat()
     response = (
         client.table("leads")
         .select("*, properties(*)")

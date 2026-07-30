@@ -41,10 +41,10 @@ backend/voice/prompts/sophia_runtime.md for the full voice spec.
   bob/ worker is the one exception — it is a separately-deployed
   process, and it imports backend.lib.db like everything else rather
   than opening its own client.
-- Always `import backend.lib.db as db` and call `db.fn(...)` —
-  never `from backend.lib.db import fn`. A from-import binds the
-  function at import time, which silently breaks test monkeypatching
-  and makes call sites harder to trace back to db.py.
+- Always `from backend.lib import db` and call `db.fn(...)` — never
+  `from backend.lib.db import fn`. Importing a bare function binds it
+  at import time, which silently breaks test monkeypatching and makes
+  call sites harder to trace back to db.py.
 - Never commit .env files, ever — not even with placeholder values.
 - All money values stored as integer cents. ARV and MAO always
   integers, never floats. MAO formula: (ARV * 0.70) - 2,500,000

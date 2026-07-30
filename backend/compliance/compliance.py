@@ -5,7 +5,7 @@ from datetime import datetime
 
 from loguru import logger
 
-import backend.lib.db as db
+from backend.lib import db
 from backend.lib.config import get_settings
 
 

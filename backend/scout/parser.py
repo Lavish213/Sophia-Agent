@@ -14,7 +14,10 @@ FIELD_MAP = {
     "zip": ["zip", "zipcode", "zip_code", "property_zip", "postal_code"],
     "county": ["county", "county_name"],
     "owner_name": ["owner_name", "owner", "owner_1", "mailing_owner"],
-    "owner_phone": ["phone_1", "phone", "mobile", "cell_phone", "owner_phone", "contact_phone", "phone_number", "primary_phone", "homeowner_phone"],
+    "owner_phone": [
+        "phone_1", "phone", "mobile", "cell_phone", "owner_phone",
+        "contact_phone", "phone_number", "primary_phone", "homeowner_phone",
+    ],
     "owner_phone_2": ["phone_2", "mobile_2", "alt_phone", "alternate_phone", "secondary_phone"],
     "owner_email": ["email", "owner_email", "contact_email", "email_address", "homeowner_email"],
     "beds": ["beds", "bedrooms", "bed_count", "no_bedrooms"],
@@ -34,7 +37,8 @@ FIELD_MAP = {
 
 
 def _normalize_header(header: str) -> str:
-    return header.strip().lower().replace(" ", "_").replace("-", "_").replace("(", "").replace(")", "").replace("/", "_")
+    header = header.strip().lower().replace(" ", "_").replace("-", "_")
+    return header.replace("(", "").replace(")", "").replace("/", "_")
 
 
 def _find_value(row: dict[str, str], candidates: list[str]) -> str | None:

@@ -8,6 +8,22 @@ from backend.lib import db
 client = TestClient(app)
 
 
+def test_sms_inbound_stop_returns_confirmation(monkeypatch):
+    import backend.api.routes.sms_webhook as sms_webhook_route
+    monkeypatch.setattr(sms_webhook_route, "handle_inbound_sms", lambda from_number, body: "opted_out")
+    resp = client.post("/api/sms/inbound", data={"From": "+12095551212", "Body": "STOP"})
+    assert resp.status_code == 200
+    assert "unsubscribed" in resp.text.lower()
+
+
+def test_sms_inbound_other_returns_empty(monkeypatch):
+    import backend.api.routes.sms_webhook as sms_webhook_route
+    monkeypatch.setattr(sms_webhook_route, "handle_inbound_sms", lambda from_number, body: "logged")
+    resp = client.post("/api/sms/inbound", data={"From": "+12095551212", "Body": "ok thanks"})
+    assert resp.status_code == 200
+    assert "<Message>" not in resp.text
+
+
 def test_voice_inbound_returns_laml(monkeypatch):
     from backend.lib.config import get_settings
     monkeypatch.setenv("PUBLIC_URL", "https://sophia.example.com")

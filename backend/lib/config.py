@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     bob_worker_interval_minutes: int = 5
     bob_batch_size: int = 20
 
+    sendgrid_api_key: str = ""
+    from_email: str = ""
+
+    max_concurrent_outbound: int = 3
+    dialer_interval_minutes: int = 10
+    dialer_batch_size: int = 10
+    outbound_reattempt_hours: int = 20
+
     environment: str = "development"
 
 

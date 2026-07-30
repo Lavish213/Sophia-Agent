@@ -155,6 +155,52 @@ picks leads up from there, on its own schedule:
    at dial time. Replying STOP to a text sets `opted_out` and stops both
    future calls and texts for that lead; replying START clears it.
 
+## Where leads come from
+
+Every lead, whatever the source, is created through one function
+(`backend/scout/intake.py`), which normalizes phone numbers to E.164 and
+dedupes against existing leads before creating anything.
+
+| Source | How it arrives | Gives a phone number? |
+|---|---|---|
+| **Website form** | `POST /api/intake/web-form` | Yes — seller types it in |
+| **Inbound call** | Someone calls your SignalWire number | Yes — caller ID |
+| **Inbound text** | Someone texts your SignalWire number | Yes |
+| **CSV upload** | Dashboard → Properties | If your list has one |
+| **Reddit** | Discovery worker, needs manual follow-up | No |
+| **Skip trace** | Enrichment of address-only leads | Yes, if BatchData is configured |
+
+Inbound sources score highest — someone who contacts you is worth more than
+someone you found. A `STOP` text from an unknown number is added to the DNC
+list instead of becoming a lead.
+
+**Read [`docs/LEAD_SOURCES.md`](docs/LEAD_SOURCES.md)** for the full research:
+what the established players (PropStream, BatchLeads, DealMachine, Carrot)
+actually do, what each source costs, and which sources were deliberately
+rejected and why — including why scraping California eviction filings is a
+legal dead end.
+
+### Website form setup
+
+Point your site's form at `POST /api/intake/web-form` with an
+`X-Intake-Secret` header matching `INTAKE_WEBHOOK_SECRET`. Post it from your
+website's **backend**, not from browser JavaScript — the secret must not ship
+to the browser. The endpoint refuses to run at all if the secret isn't
+configured, since it can create leads that get called.
+
+Set `INTAKE_AUTO_CALL=true` to have Sophia call a web-form lead immediately
+(speed-to-lead). It's off by default, and still passes through the normal
+compliance checks.
+
+### Skip tracing
+
+Most distress data gives you an address, not a phone number, so a voice agent
+can't use it directly. Set `BATCHDATA_API_KEY` and the discovery worker will
+enrich address-only leads on each cycle: it looks up contacts, scrubs the
+number against DNC and TCPA-litigator lists, and only then writes it to the
+lead. The scrub **fails closed** — if the check errors, the number is treated
+as blocked rather than dialed. Without the key, enrichment is a no-op.
+
 ## Lead discovery — how Sophia finds leads on her own
 
 Besides working leads you drop in as a CSV, the `discovery` worker finds

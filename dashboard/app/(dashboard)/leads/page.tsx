@@ -6,12 +6,23 @@ function formatCents(cents: number | null): string {
   return `$${(cents / 100).toLocaleString()}`;
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  web_form: "Website form",
+  inbound_call: "Called in",
+  inbound_sms: "Texted in",
+  reddit: "Reddit",
+  skiptrace: "Skip traced",
+  csv_import: "CSV",
+};
+
 export default async function LeadsPage() {
   const supabase = createClient();
 
   const { data: leads } = await supabase
     .from("leads")
-    .select("id, stage, is_hot_lead, motivation_level, updated_at, properties(address, distress_score, estimated_arv)")
+    .select(
+      "id, stage, is_hot_lead, motivation_level, owner_phone, updated_at, properties(address, distress_score, estimated_arv, source)"
+    )
     .order("updated_at", { ascending: false })
     .limit(100);
 
@@ -23,6 +34,7 @@ export default async function LeadsPage() {
           <thead className="border-b border-white/10 text-white/50">
             <tr>
               <th className="p-3">Address</th>
+              <th className="p-3">Source</th>
               <th className="p-3">Stage</th>
               <th className="p-3">Distress</th>
               <th className="p-3">Est. ARV</th>
@@ -37,6 +49,14 @@ export default async function LeadsPage() {
                     {lead.properties?.address ?? "Unknown address"}
                   </Link>
                 </td>
+                <td className="p-3 text-white/50">
+                  {SOURCE_LABELS[lead.properties?.source] ?? lead.properties?.source ?? "—"}
+                  {!lead.owner_phone && (
+                    <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-300">
+                      no phone
+                    </span>
+                  )}
+                </td>
                 <td className="p-3 text-white/70">{lead.stage}</td>
                 <td className="p-3 text-white/70">{lead.properties?.distress_score ?? "—"}</td>
                 <td className="p-3 text-white/70">{formatCents(lead.properties?.estimated_arv)}</td>
@@ -45,7 +65,7 @@ export default async function LeadsPage() {
             ))}
             {(leads ?? []).length === 0 && (
               <tr>
-                <td colSpan={5} className="p-4 text-white/40">
+                <td colSpan={6} className="p-4 text-white/40">
                   No leads yet. Upload a properties CSV to get started.
                 </td>
               </tr>

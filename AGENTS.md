@@ -74,6 +74,8 @@ backend/compliance/          → TCPA/DNC/calling-hours gate
 backend/voice/                → Pipecat pipeline + SignalWire + tools
 backend/voice/prompts/        → Sophia's system prompt (one file)
 backend/alerts/                → SMS (SignalWire) + email (SendGrid) + post-call follow-up
+backend/scout/intake.py        → the one path every lead source funnels through
+backend/scout/skiptrace.py     → BatchData skip trace + DNC/TCPA scrub, address to phone
 backend/scout/reddit.py        → Reddit intent-scoring + fetch logic (also used by discovery/)
 backend/scout/convert.py       → converts a reddit_match into a property/contact/lead
 backend/api/                    → FastAPI route handlers
@@ -118,6 +120,27 @@ disposition-appropriate SMS and/or email. Every send re-checks
 opted_out/email_opted_out immediately before sending, not just at
 dial time. Inbound SMS handles STOP/START itself; there is no
 separate DNC sync step required for that.
+
+## LEAD SOURCES
+Every lead, from every source, is created through one function:
+backend/scout/intake.py::intake_lead. Never create property+contact+lead
+rows directly in a new source module — add a source and call intake_lead,
+so dedupe, phone normalization, and source scoring stay in one place.
+Phone numbers are normalized to E.164 (+1XXXXXXXXXX) at intake, because
+SignalWire reports E.164 while CSVs carry every other format, and an
+un-normalized compare silently creates duplicate leads for one person.
+
+Sources currently wired:
+csv_import      → dashboard CSV upload (backend/scout/ingest.py)
+web_form        → POST /api/intake/web-form, shared-secret header
+inbound_call    → unknown caller, created in backend/voice/context.py
+inbound_sms     → unknown texter, created in backend/alerts/sms.py
+reddit          → discovery worker, needs manual contact-finding
+skiptrace       → enrichment, not a source of new leads
+
+A STOP text from an unknown number goes to dnc_list and does NOT create a
+lead. See docs/LEAD_SOURCES.md for the full research, costs, and the
+sources that were deliberately rejected (notably CA eviction records).
 
 ## LEAD DISCOVERY (REDDIT)
 The discovery worker (discovery/main.py) runs on its own schedule

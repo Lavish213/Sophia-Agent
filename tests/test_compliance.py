@@ -61,7 +61,7 @@ def test_blocks_number_on_dnc_list(monkeypatch):
     monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead())
     monkeypatch.setattr(db, "is_on_dnc_list", lambda phone: phone == "2095551212")
     import backend.compliance.compliance as compliance_module
-    monkeypatch.setattr(compliance_module, "is_calling_hours", lambda: True)
+    monkeypatch.setattr(compliance_module, "is_calling_hours_for_phone", lambda phone, now=None: True)
     result = ComplianceEngine().check_call_allowed("lead-1")
     assert result.allowed is False
     assert result.reason == "dnc_list_match"
@@ -71,7 +71,7 @@ def test_allows_clean_lead_during_hours(monkeypatch):
     monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead())
     monkeypatch.setattr(db, "is_on_dnc_list", lambda phone: False)
     import backend.compliance.compliance as compliance_module
-    monkeypatch.setattr(compliance_module, "is_calling_hours", lambda: True)
+    monkeypatch.setattr(compliance_module, "is_calling_hours_for_phone", lambda phone, now=None: True)
     result = ComplianceEngine().check_call_allowed("lead-1")
     assert result.allowed is True
 

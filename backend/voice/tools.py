@@ -52,6 +52,46 @@ def request_owner_callback(lead_id: str, reason: str) -> dict:
     return {"success": True}
 
 
+def send_details(lead_id: str, channel: str, note: str | None = None) -> dict:
+    from backend.alerts.email import send_email
+    from backend.alerts.sms import send_sms
+    from backend.lib.config import get_settings
+
+    settings = get_settings()
+    lead = db.get_lead_with_property(lead_id)
+    if not lead:
+        return {"success": False, "reason": "lead_not_found"}
+
+    detail = f" {note.strip()}" if note else ""
+    results = {}
+
+    if channel in ("text", "both"):
+        if not lead.get("owner_phone"):
+            results["text"] = {"success": False, "reason": "no_phone_on_file"}
+        else:
+            body = (
+                f"Hey, it's Sophia with {settings.business_name}, following up like I said "
+                f"on our call.{detail} Just reply here with any questions. "
+                "Reply STOP to opt out."
+            )
+            results["text"] = send_sms(lead_id, body)
+
+    if channel in ("email", "both"):
+        if not lead.get("owner_email"):
+            results["email"] = {"success": False, "reason": "no_email_on_file"}
+        else:
+            body = (
+                f"Hi,\n\nThis is Sophia with {settings.business_name}, following up on our "
+                f"call as promised.{detail}\n\nJust reply to this email with any questions.\n\n"
+                f"Thanks,\nSophia\n{settings.business_name}"
+            )
+            results["email"] = send_email(lead_id, "Following up on our call", body)
+
+    sent = [k for k, v in results.items() if v.get("success")]
+    logger.info("send_details lead_id={} channel={} sent={}", lead_id, channel, sent)
+    return {"success": bool(sent), "sent": sent, "results": results}
+
+
 def mark_call_ended(lead_id: str, disposition: str) -> dict:
     valid = {"HOT", "WARM", "COLD", "DEAD"}
     if disposition not in valid:
@@ -91,6 +131,14 @@ def build_sophia_tool_schemas(lead_id: str | None, on_end_call):
             return
         reason = params.arguments.get("reason", "")
         await params.result_callback(request_owner_callback(lead_id, reason))
+
+    async def _send_details_handler(params):
+        if not lead_id:
+            await params.result_callback({"success": False, "reason": "no_lead_on_file"})
+            return
+        channel = params.arguments.get("channel", "text")
+        note = params.arguments.get("note")
+        await params.result_callback(send_details(lead_id, channel, note))
 
     async def _end_call_handler(params):
         await params.result_callback({"success": True})
@@ -140,6 +188,26 @@ def build_sophia_tool_schemas(lead_id: str | None, on_end_call):
             },
             required=["reason"],
             handler=_request_owner_callback_handler,
+        ),
+        FunctionSchema(
+            name="send_details",
+            description=(
+                "Send the seller a text or email during the call, when they ask for something "
+                "in writing or ask you to follow up. Only use this if they asked for it."
+            ),
+            properties={
+                "channel": {
+                    "type": "string",
+                    "enum": ["text", "email", "both"],
+                    "description": "How the seller asked to be contacted.",
+                },
+                "note": {
+                    "type": "string",
+                    "description": "One short sentence about what they asked you to send.",
+                },
+            },
+            required=["channel"],
+            handler=_send_details_handler,
         ),
         FunctionSchema(
             name="end_call",

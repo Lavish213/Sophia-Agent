@@ -99,10 +99,16 @@ class _FakeParams:
     llm: Any = None
 
 
-def test_build_sophia_tool_schemas_returns_four_tools():
+def test_build_sophia_tool_schemas_returns_every_tool():
     schema = build_sophia_tool_schemas(lead_id="lead-1", on_end_call=None)
     names = {t.name for t in schema.standard_tools}
-    assert names == {"get_offer_range", "book_appointment", "request_owner_callback", "end_call"}
+    assert names == {
+        "get_offer_range",
+        "book_appointment",
+        "request_owner_callback",
+        "send_details",
+        "end_call",
+    }
 
 
 async def test_get_offer_range_handler_reports_no_lead():
@@ -134,3 +140,81 @@ async def test_end_call_handler_pushes_end_frame_and_calls_back(monkeypatch):
     assert seen_disposition["value"] == "HOT"
     assert len(llm.pushed) == 1
     assert isinstance(llm.pushed[0], EndWorkerFrame)
+
+
+def test_send_details_texts_the_seller(monkeypatch):
+    from backend.voice.tools import send_details
+
+    monkeypatch.setattr(
+        db, "get_lead_with_property", lambda lid: {"id": lid, "owner_phone": "+12095551212"}
+    )
+    sent = {}
+    monkeypatch.setattr(
+        "backend.alerts.sms.send_sms",
+        lambda lid, body: sent.update(body=body) or {"success": True},
+    )
+
+    result = send_details("lead-1", "text", "the offer range we discussed")
+
+    assert result["success"] is True
+    assert result["sent"] == ["text"]
+    assert "offer range we discussed" in sent["body"]
+    assert "STOP" in sent["body"]
+
+
+def test_send_details_without_a_phone_reports_failure(monkeypatch):
+    from backend.voice.tools import send_details
+
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lid: {"id": lid, "owner_phone": None})
+
+    result = send_details("lead-1", "text")
+
+    assert result["success"] is False
+    assert result["results"]["text"]["reason"] == "no_phone_on_file"
+
+
+def test_send_details_without_an_email_reports_failure(monkeypatch):
+    from backend.voice.tools import send_details
+
+    monkeypatch.setattr(
+        db, "get_lead_with_property", lambda lid: {"id": lid, "owner_email": None}
+    )
+
+    result = send_details("lead-1", "email")
+
+    assert result["success"] is False
+    assert result["results"]["email"]["reason"] == "no_email_on_file"
+
+
+def test_send_details_both_channels(monkeypatch):
+    from backend.voice.tools import send_details
+
+    monkeypatch.setattr(
+        db,
+        "get_lead_with_property",
+        lambda lid: {"id": lid, "owner_phone": "+12095551212", "owner_email": "m@example.com"},
+    )
+    monkeypatch.setattr("backend.alerts.sms.send_sms", lambda lid, b: {"success": True})
+    monkeypatch.setattr("backend.alerts.email.send_email", lambda lid, s, b: {"success": True})
+
+    result = send_details("lead-1", "both")
+
+    assert sorted(result["sent"]) == ["email", "text"]
+
+
+def test_send_details_missing_lead(monkeypatch):
+    from backend.voice.tools import send_details
+
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lid: None)
+    assert send_details("missing", "text")["reason"] == "lead_not_found"
+
+
+def test_sophia_has_a_tool_for_every_promise_the_prompt_makes():
+    from backend.voice.agent import load_system_prompt
+    from backend.voice.tools import build_sophia_tool_schemas
+
+    tools = build_sophia_tool_schemas(lead_id="lead-1", on_end_call=lambda d: None)
+    names = {t.name for t in tools.standard_tools}
+
+    assert "send_details" in names, "the prompt offers to text or email; she needs the tool"
+    assert "send details tool" in load_system_prompt()

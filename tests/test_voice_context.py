@@ -1,5 +1,6 @@
 from backend.lib import db
 from backend.voice.context import (
+    build_call_brief_str,
     build_caller_awareness_str,
     build_property_context_str,
     preload_call_context,
@@ -137,3 +138,64 @@ def test_caller_awareness_flags_opted_out_lead():
 def test_caller_awareness_fresh_lead_has_no_history():
     text = build_caller_awareness_str({}, "outbound")
     assert "have not spoken with this person before" in text
+
+
+def _brief(**overrides):
+    brief = {
+        "objective": "Confirm they still own the property",
+        "missing_box": "right_person",
+        "mood": "calm and unhurried",
+        "opener_hint": "Reference the inherited property gently",
+        "avoid": ["the foreclosure notice", "price"],
+        "escalation_rules": ["they mention a lawyer"],
+    }
+    brief.update(overrides)
+    return brief
+
+
+def test_call_brief_is_empty_when_bob_has_not_run():
+    assert build_call_brief_str({}) == ""
+    assert build_call_brief_str(None) == ""
+    assert build_call_brief_str({"call_brief": None}) == ""
+
+
+def test_call_brief_survives_a_non_dict_value():
+    assert build_call_brief_str({"call_brief": "not-a-dict"}) == ""
+    assert build_call_brief_str({"call_brief": []}) == ""
+
+
+def test_call_brief_renders_every_field():
+    text = build_call_brief_str({"call_brief": _brief()})
+    assert "Confirm they still own the property" in text
+    assert "right person" in text
+    assert "calm and unhurried" in text
+    assert "inherited property" in text
+    assert "the foreclosure notice" in text
+    assert "a lawyer" in text
+
+
+def test_call_brief_handles_a_partial_brief():
+    text = build_call_brief_str({"call_brief": {"objective": "Just qualify them"}})
+    assert "Just qualify them" in text
+    assert "Do not bring up" not in text
+
+
+def test_outbound_context_carries_the_brief_bob_generated(monkeypatch):
+    lead = {"id": "lead-1", "properties": {"owner_name": "Maria Gonzalez"}, "call_brief": _brief()}
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lid: lead)
+
+    ctx = preload_outbound_context("lead-1")
+
+    assert "Confirm they still own the property" in ctx["call_brief_str"], (
+        "bob generates a brief every cycle; if it never reaches the context it is wasted work"
+    )
+
+
+def test_inbound_context_carries_the_brief(monkeypatch):
+    lead = {"id": "lead-1", "properties": {}, "call_brief": _brief()}
+    monkeypatch.setattr(db, "get_lead_by_owner_phone", lambda phone: lead)
+    monkeypatch.setattr(db, "get_lead_by_owner_email", lambda email: None)
+
+    ctx = preload_call_context("2095551212")
+
+    assert "Confirm they still own the property" in ctx["call_brief_str"]

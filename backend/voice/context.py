@@ -98,6 +98,40 @@ def build_caller_awareness_str(lead: dict | None, direction: str, is_new_contact
     return " ".join(lines)
 
 
+def build_call_brief_str(lead: dict | None) -> str:
+    brief = (lead or {}).get("call_brief")
+    if not isinstance(brief, dict) or not brief:
+        return ""
+
+    lines = []
+
+    objective = brief.get("objective")
+    if objective:
+        lines.append(f"Your objective on this call: {objective}")
+
+    missing_box = brief.get("missing_box")
+    if missing_box:
+        lines.append(f"The single most important thing to find out is their {missing_box.replace('_', ' ')}.")
+
+    mood = brief.get("mood")
+    if mood:
+        lines.append(f"Match this tone: {mood}.")
+
+    opener_hint = brief.get("opener_hint")
+    if opener_hint:
+        lines.append(f"Suggested way in: {opener_hint}")
+
+    avoid = brief.get("avoid") or []
+    if avoid:
+        lines.append("Do not bring up: " + "; ".join(str(a) for a in avoid) + ".")
+
+    escalation_rules = brief.get("escalation_rules") or []
+    if escalation_rules:
+        lines.append("Escalate to Alanzo if: " + "; ".join(str(r) for r in escalation_rules) + ".")
+
+    return " ".join(lines)
+
+
 def preload_call_context(caller_phone: str) -> dict:
     from backend.scout.intake import find_existing_lead, intake_lead
 
@@ -136,6 +170,7 @@ def preload_call_context(caller_phone: str) -> dict:
         "owner_first_name": first_name or "there",
         "property_context_str": build_property_context_str(lead),
         "caller_awareness_str": build_caller_awareness_str(lead, "inbound", is_new_contact),
+        "call_brief_str": build_call_brief_str(lead),
     }
 
 
@@ -163,4 +198,5 @@ def preload_outbound_context(lead_id: str) -> dict:
         "owner_first_name": first_name or "there",
         "property_context_str": build_property_context_str(lead),
         "caller_awareness_str": build_caller_awareness_str(lead, "outbound"),
+        "call_brief_str": build_call_brief_str(lead),
     }

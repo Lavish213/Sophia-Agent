@@ -133,3 +133,64 @@ def test_runner_helper_still_exists(required):
     from pipecat.runner import utils
 
     assert hasattr(utils, required), f"pipecat.runner.utils lost {required}"
+
+
+def test_vad_is_tuned_for_phone_pauses_not_default():
+    from backend.lib.config import get_settings
+    from backend.voice.agent import build_vad_analyzer
+
+    analyzer = build_vad_analyzer()
+    settings = get_settings()
+
+    assert analyzer is not None
+    assert settings.vad_stop_secs >= 0.5, (
+        "pipecat defaults to 0.2s of silence, which cuts sellers off mid-sentence on a phone call"
+    )
+
+
+def test_smart_turn_is_used_when_enabled(monkeypatch):
+    from backend.lib.config import get_settings
+    from backend.voice.agent import build_user_turn_strategies
+
+    monkeypatch.setenv("SMART_TURN_ENABLED", "true")
+    get_settings.cache_clear()
+    try:
+        strategies = build_user_turn_strategies()
+        assert type(strategies.stop).__name__ == "TurnAnalyzerUserTurnStopStrategy"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_falls_back_to_timeout_strategy_when_smart_turn_disabled(monkeypatch):
+    from backend.lib.config import get_settings
+    from backend.voice.agent import build_user_turn_strategies
+
+    monkeypatch.setenv("SMART_TURN_ENABLED", "false")
+    get_settings.cache_clear()
+    try:
+        strategies = build_user_turn_strategies()
+        assert type(strategies.stop).__name__ == "SpeechTimeoutUserTurnStopStrategy"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_smart_turn_failure_does_not_break_the_call(monkeypatch):
+    import backend.voice.agent as agent_module
+    from backend.lib.config import get_settings
+
+    monkeypatch.setenv("SMART_TURN_ENABLED", "true")
+    get_settings.cache_clear()
+
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+
+    def _boom(name, *args, **kwargs):
+        if "smart_turn" in name:
+            raise RuntimeError("model file missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", _boom)
+    try:
+        strategies = agent_module.build_user_turn_strategies()
+        assert type(strategies.stop).__name__ == "SpeechTimeoutUserTurnStopStrategy"
+    finally:
+        get_settings.cache_clear()

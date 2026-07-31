@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     intake_webhook_secret: str = ""
     intake_auto_call: bool = False
 
+    smart_turn_enabled: bool = True
+    vad_stop_secs: float = 0.6
+    vad_confidence: float = 0.7
+    user_speech_timeout_secs: float = 0.8
+
     machine_detection_timeout_seconds: int = 30
     voicemail_voice: str = ""
     max_voicemails_per_lead: int = 3

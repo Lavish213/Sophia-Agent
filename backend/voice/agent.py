@@ -47,6 +47,45 @@ def extract_transcript_chunks_from_messages(messages: list[dict]) -> list[dict]:
     return chunks
 
 
+def build_vad_analyzer():
+    from pipecat.audio.vad.silero import SileroVADAnalyzer
+    from pipecat.audio.vad.vad_analyzer import VADParams
+
+    settings = get_settings()
+    return SileroVADAnalyzer(
+        params=VADParams(
+            confidence=settings.vad_confidence,
+            stop_secs=settings.vad_stop_secs,
+        )
+    )
+
+
+def build_user_turn_strategies():
+    from pipecat.processors.aggregators.llm_response_universal import UserTurnStrategies
+    from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
+
+    settings = get_settings()
+
+    if settings.smart_turn_enabled:
+        try:
+            from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+            from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+                TurnAnalyzerUserTurnStopStrategy,
+            )
+
+            stop = TurnAnalyzerUserTurnStopStrategy(turn_analyzer=LocalSmartTurnAnalyzerV3())
+            logger.info("smart_turn_enabled")
+            return UserTurnStrategies(stop=stop)
+        except Exception as e:
+            logger.warning("smart_turn_unavailable_falling_back error={}", str(e))
+
+    return UserTurnStrategies(
+        stop=SpeechTimeoutUserTurnStopStrategy(
+            user_speech_timeout=settings.user_speech_timeout_secs
+        )
+    )
+
+
 def resolve_final_disposition(intel: dict | None, tool_disposition: str | None, has_transcript: bool) -> str | None:
     extracted = (intel or {}).get("disposition")
     if extracted:
@@ -59,7 +98,6 @@ def resolve_final_disposition(intel: dict | None, tool_disposition: str | None, 
 
 
 def build_pipeline_worker(transport, call_context: dict, on_end_call):
-    from pipecat.audio.vad.silero import SileroVADAnalyzer
     from pipecat.pipeline.pipeline import Pipeline
     from pipecat.pipeline.worker import PipelineParams, PipelineWorker
     from pipecat.processors.aggregators.llm_context import LLMContext
@@ -90,7 +128,10 @@ def build_pipeline_worker(transport, call_context: dict, on_end_call):
     context = LLMContext(tools=tools)
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=build_vad_analyzer(),
+            user_turn_strategies=build_user_turn_strategies(),
+        ),
     )
 
     pipeline = Pipeline([

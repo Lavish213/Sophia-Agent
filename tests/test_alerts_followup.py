@@ -1,5 +1,12 @@
+import pytest
+
 from backend.alerts import followup
 from backend.lib import db
+
+
+@pytest.fixture(autouse=True)
+def _no_prior_reply(monkeypatch):
+    monkeypatch.setattr(db, "lead_has_replied_by_sms", lambda lead_id: False)
 
 
 def _lead(**overrides):
@@ -122,7 +129,7 @@ def test_appointment_formatting_survives_bad_timestamps():
     assert "Aug 1" in followup.format_appointment("2026-08-01T15:00:00Z")
 
 
-def test_every_text_carries_an_opt_out(monkeypatch):
+def test_first_text_always_carries_an_opt_out(monkeypatch):
     for disposition in ("no-answer", "voicemail", "HOT"):
         monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead())
         sms_calls = []
@@ -133,3 +140,29 @@ def test_every_text_carries_an_opt_out(monkeypatch):
 
         assert sms_calls, f"{disposition} sent no text"
         assert "STOP" in sms_calls[0], f"{disposition} text has no opt-out"
+
+
+def test_opt_out_footer_drops_once_the_seller_has_replied(monkeypatch):
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead())
+    monkeypatch.setattr(db, "lead_has_replied_by_sms", lambda lead_id: True)
+    sms_calls = []
+    monkeypatch.setattr(followup, "send_sms", lambda lid, body: sms_calls.append(body) or {"success": True})
+
+    followup.send_post_call_followup("lead-1", "call-1", "voicemail")
+
+    assert "STOP" not in sms_calls[0], (
+        "once someone texts back it is a conversation, and a compliance footer on every reply "
+        "is the clearest tell that nobody is really there"
+    )
+
+
+def test_texts_are_short_enough_to_read_as_human():
+    lead = _lead()
+    for body in (followup._no_answer_sms_body(lead), followup._voicemail_sms_body(lead)):
+        assert len(body) < 175, f"{len(body)} chars reads like a marketing blast"
+
+
+def test_outreach_texts_end_with_a_question():
+    lead = _lead()
+    for body in (followup._no_answer_sms_body(lead), followup._voicemail_sms_body(lead)):
+        assert body.rstrip().endswith("?"), "a text that does not ask anything does not get a reply"

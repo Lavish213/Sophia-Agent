@@ -31,12 +31,18 @@ def _property_reference(lead: dict) -> str:
     return address
 
 
+def _opt_out_suffix(lead_id: str) -> str:
+    if db.lead_has_replied_by_sms(lead_id):
+        return ""
+    return " Reply STOP to opt out."
+
+
 def _no_answer_sms_body(lead: dict) -> str:
     settings = get_settings()
     return (
-        f"{_greeting(lead)} it's Sophia with {settings.business_name}. Tried reaching you about "
-        f"{_property_reference(lead)} but couldn't get through. Call or text back whenever works "
-        "— no rush. Reply STOP to opt out."
+        f"{_greeting(lead)} it's Sophia with {settings.business_name} — tried you about "
+        f"{_property_reference(lead)} and missed you. "
+        "Any interest in hearing what we could offer?"
     )
 
 
@@ -59,8 +65,7 @@ def _voicemail_sms_body(lead: dict) -> str:
     settings = get_settings()
     return (
         f"{_greeting(lead)} it's Sophia with {settings.business_name} — just left you a voicemail "
-        f"about {_property_reference(lead)}. No pressure, but if you're curious what we'd offer, "
-        "just text me back here. Reply STOP to opt out."
+        f"about {_property_reference(lead)}. Worth a quick chat?"
     )
 
 
@@ -75,19 +80,16 @@ def format_appointment(appointment_at: str | None) -> str:
 
 
 def _conversation_sms_body(lead: dict) -> str | None:
-    settings = get_settings()
     if lead.get("appointment_at"):
         when = format_appointment(lead.get("appointment_at"))
         when_phrase = f" for {when}" if when else ""
         return (
-            f"{_greeting(lead)} it's Sophia with {settings.business_name} — great talking with you. "
-            f"You're all set{when_phrase}. If anything changes just text me here. "
-            "Reply STOP to opt out."
+            f"{_greeting(lead)} Sophia here — you're all set{when_phrase}. "
+            "Text me if anything changes."
         )
     return (
-        f"{_greeting(lead)} it's Sophia with {settings.business_name} — thanks for chatting. "
-        "I'll follow up soon, and you can reach me right here anytime before then. "
-        "Reply STOP to opt out."
+        f"{_greeting(lead)} Sophia here — thanks for chatting. I'll follow up soon, and you can "
+        "reach me right here anytime before then."
     )
 
 
@@ -103,12 +105,12 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
 
     if disposition in _VOICEMAIL_DISPOSITIONS:
         if lead.get("owner_phone"):
-            results["sms"] = send_sms(lead_id, _voicemail_sms_body(lead))
+            results["sms"] = send_sms(lead_id, _voicemail_sms_body(lead) + _opt_out_suffix(lead_id))
         return results
 
     if disposition in _NO_ANSWER_DISPOSITIONS:
         if lead.get("owner_phone"):
-            results["sms"] = send_sms(lead_id, _no_answer_sms_body(lead))
+            results["sms"] = send_sms(lead_id, _no_answer_sms_body(lead) + _opt_out_suffix(lead_id))
         if lead.get("owner_email"):
             results["email"] = send_email(lead_id, "Tried to reach you", _no_answer_email_body(lead))
         return results
@@ -116,7 +118,7 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
     if disposition in ("HOT", "WARM"):
         body = _conversation_sms_body(lead)
         if body and lead.get("owner_phone"):
-            results["sms"] = send_sms(lead_id, body)
+            results["sms"] = send_sms(lead_id, body + _opt_out_suffix(lead_id))
         return results
 
     logger.debug("no_followup_needed lead_id={} disposition={}", lead_id, disposition)

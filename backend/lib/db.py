@@ -581,6 +581,19 @@ def insert_sms_message(
     return sms_id
 
 
+def lead_has_replied_by_sms(lead_id: str) -> bool:
+    client = get_client()
+    response = (
+        client.table("sms_messages")
+        .select("id")
+        .eq("lead_id", lead_id)
+        .eq("direction", "inbound")
+        .limit(1)
+        .execute()
+    )
+    return bool(response.data)
+
+
 def get_sms_messages_for_lead(lead_id: str) -> list[dict]:
     client = get_client()
     response = (

@@ -22,6 +22,24 @@ _SITUATION_LABELS: dict[str, str] = {
 }
 
 
+def build_seller_memory(lead: dict) -> dict:
+    memory: dict = {}
+
+    for key in ("motivation_level", "price_floor", "timeline_urgency", "objections", "next_best_action"):
+        value = lead.get(key)
+        if value is not None:
+            memory[key] = value
+
+    summary = lead.get("call_summary")
+    attempts = lead.get("call_attempts") or 0
+    if summary:
+        memory["call_summaries"] = [summary]
+    else:
+        memory["call_summaries"] = [""] * attempts
+
+    return memory
+
+
 def get_situation_label(prop: dict) -> str:
     distress = (prop.get("distress_type") or "").lower()
     for key, label in _SITUATION_LABELS.items():
@@ -49,7 +67,7 @@ def run_once() -> dict:
 
         try:
             intel_packet = db.load_intel_packet(lead_id) or {}
-            seller_memory = db.get_seller_memory(lead_id)
+            seller_memory = build_seller_memory(lead)
             situation_label = get_situation_label(prop)
             initial_trust = float(lead.get("initial_trust_score") or 5.0)
 

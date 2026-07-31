@@ -515,6 +515,21 @@ def save_decision_record(record: dict) -> None:
     logger.debug("save_decision_record lead_id={} type={}", record.get("lead_id"), record.get("decision_type"))
 
 
+def brief_is_stale(lead: dict) -> bool:
+    if not lead.get("call_brief"):
+        return True
+
+    last_called_at = lead.get("last_called_at")
+    if not last_called_at:
+        return False
+
+    generated_at = lead.get("call_brief_generated_at")
+    if not generated_at:
+        return True
+
+    return str(generated_at) < str(last_called_at)
+
+
 def get_leads_needing_brief(batch_size: int = 20) -> list[dict]:
     client = get_client()
     response = (
@@ -523,15 +538,15 @@ def get_leads_needing_brief(batch_size: int = 20) -> list[dict]:
         .eq("opted_out", False)
         .eq("dnc_blocked", False)
         .neq("stage", "dead")
-        .is_("call_brief", "null")
-        .limit(batch_size)
+        .order("last_called_at", desc=True, nullsfirst=True)
+        .limit(max(batch_size * 10, 100))
         .execute()
     )
     rows = response.data
     for r in rows:
         if isinstance(r.get("properties"), list):
             r["properties"] = r["properties"][0] if r["properties"] else {}
-    return rows
+    return [r for r in rows if brief_is_stale(r)][:batch_size]
 
 
 def save_call_brief(lead_id: str, brief: dict) -> None:

@@ -558,6 +558,87 @@ def save_call_brief(lead_id: str, brief: dict) -> None:
     logger.info("save_call_brief lead_id={}", lead_id)
 
 
+def list_active_buyers(limit: int = 500) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("buyers")
+        .select("*")
+        .eq("active", True)
+        .order("deals_closed", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data
+
+
+def list_buyers(limit: int = 200) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("buyers").select("*").order("created_at", desc=True).limit(limit).execute()
+    )
+    return response.data
+
+
+def insert_buyer(data: dict) -> str | None:
+    client = get_client()
+    response = client.table("buyers").insert(data).execute()
+    buyer_id = response.data[0]["id"] if response.data else None
+    logger.info("insert_buyer name={} id={}", data.get("name"), buyer_id)
+    return buyer_id
+
+
+def get_buyer_by_phone(phone: str) -> dict | None:
+    client = get_client()
+    response = client.table("buyers").select("*").eq("phone", phone).limit(1).execute()
+    return response.data[0] if response.data else None
+
+
+def update_buyer_fields(buyer_id: str, fields: dict) -> None:
+    if not fields:
+        return
+    client = get_client()
+    data = dict(fields)
+    data["updated_at"] = _now()
+    client.table("buyers").update(data).eq("id", buyer_id).execute()
+    logger.info("update_buyer_fields buyer_id={} fields={}", buyer_id, list(fields.keys()))
+
+
+def deal_already_blasted(property_id: str, buyer_id: str, channel: str) -> bool:
+    client = get_client()
+    response = (
+        client.table("deal_blasts")
+        .select("id")
+        .eq("property_id", property_id)
+        .eq("buyer_id", buyer_id)
+        .eq("channel", channel)
+        .limit(1)
+        .execute()
+    )
+    return bool(response.data)
+
+
+def insert_deal_blast(property_id: str, buyer_id: str, channel: str, status: str) -> None:
+    client = get_client()
+    client.table("deal_blasts").insert({
+        "property_id": property_id,
+        "buyer_id": buyer_id,
+        "channel": channel,
+        "status": status,
+    }).execute()
+
+
+def get_blasts_for_property(property_id: str) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("deal_blasts")
+        .select("*, buyers(name, company, phone)")
+        .eq("property_id", property_id)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return response.data
+
+
 def health_check() -> bool:
     client = get_client()
     client.table("leads").select("id").limit(1).execute()

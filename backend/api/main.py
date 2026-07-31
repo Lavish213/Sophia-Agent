@@ -10,6 +10,7 @@ from backend.api.routes import (
     calls,
     comps,
     discovery,
+    dispo,
     health,
     intake,
     leads,
@@ -45,3 +46,4 @@ app.include_router(voice_router, prefix="/api")
 app.include_router(sms_webhook.router, prefix="/api")
 app.include_router(discovery.router, prefix="/api")
 app.include_router(intake.router, prefix="/api")
+app.include_router(dispo.router, prefix="/api")

@@ -6,6 +6,34 @@ from backend.lib import db
 from backend.lib.config import get_settings
 
 
+def send_raw_email(to_email: str, subject: str, body: str) -> dict:
+    if not to_email:
+        return {"success": False, "reason": "no_email"}
+
+    settings = get_settings()
+    if not settings.sendgrid_api_key:
+        logger.warning("send_raw_email_not_configured")
+        return {"success": False, "reason": "sendgrid_not_configured"}
+
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+
+    try:
+        message = Mail(
+            from_email=settings.from_email,
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=body,
+        )
+        client = SendGridAPIClient(settings.sendgrid_api_key)
+        response = client.send(message)
+        provider_message_id = response.headers.get("X-Message-Id") if response.headers else None
+        return {"success": True, "message_id": provider_message_id}
+    except Exception as e:
+        logger.error("send_raw_email_failed to={} error={}", to_email, str(e))
+        return {"success": False, "reason": str(e)}
+
+
 def send_email(lead_id: str, subject: str, body: str) -> dict:
     lead = db.get_lead_by_id(lead_id)
     if not lead:

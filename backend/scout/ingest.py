@@ -3,6 +3,7 @@ from __future__ import annotations
 from loguru import logger
 
 from backend.lib import db
+from backend.scout.intake import normalize_phone
 from backend.scout.scorer import calculate_distress_score
 
 
@@ -20,24 +21,28 @@ def ingest_property_row(row: dict) -> dict:
             "deal_viable": row.get("deal_viable", False),
         }
 
-    if contact.get("phone") or contact.get("email"):
+    phone = normalize_phone(contact.get("phone")) or contact.get("phone")
+    phone_2 = normalize_phone(contact.get("phone_2")) or contact.get("phone_2")
+    email = (contact.get("email") or "").strip().lower() or None
+
+    if phone or email:
         db.insert_contact({
             "property_id": property_id,
             "name": contact.get("name"),
-            "phone": contact.get("phone"),
-            "phone_2": contact.get("phone_2"),
-            "email": contact.get("email"),
+            "phone": phone,
+            "phone_2": phone_2,
+            "email": email,
         })
 
     lead = db.get_or_create_lead(property_id)
 
     lead_updates = {}
-    if contact.get("phone") and not lead.get("owner_phone"):
-        lead_updates["owner_phone"] = contact["phone"]
-    if contact.get("phone_2") and not lead.get("owner_phone_2"):
-        lead_updates["owner_phone_2"] = contact["phone_2"]
-    if contact.get("email") and not lead.get("owner_email"):
-        lead_updates["owner_email"] = contact["email"]
+    if phone and not lead.get("owner_phone"):
+        lead_updates["owner_phone"] = phone
+    if phone_2 and not lead.get("owner_phone_2"):
+        lead_updates["owner_phone_2"] = phone_2
+    if email and not lead.get("owner_email"):
+        lead_updates["owner_email"] = email
     if lead_updates:
         db.update_lead_fields(lead["id"], lead_updates)
 

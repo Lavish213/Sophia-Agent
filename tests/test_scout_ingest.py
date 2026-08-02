@@ -47,7 +47,7 @@ def test_contact_is_stripped_before_the_property_upsert(monkeypatch):
     ingest.ingest_property_row(row)
 
     assert "contact" not in captured["property"], "contact must never reach the properties table"
-    assert captured["contacts"][0]["phone"] == "2095551212"
+    assert captured["contacts"][0]["phone"] == "+12095551212"
 
 
 def test_contact_details_are_promoted_onto_the_lead(monkeypatch):
@@ -56,8 +56,8 @@ def test_contact_details_are_promoted_onto_the_lead(monkeypatch):
 
     ingest.ingest_property_row(row)
 
-    assert captured["lead_updates"]["owner_phone"] == "2095551212"
-    assert captured["lead_updates"]["owner_phone_2"] == "2095559999"
+    assert captured["lead_updates"]["owner_phone"] == "+12095551212"
+    assert captured["lead_updates"]["owner_phone_2"] == "+12095559999"
     assert captured["lead_updates"]["owner_email"] == "m@example.com"
 
 
@@ -140,3 +140,23 @@ def test_ingest_does_not_mutate_the_caller_row_beyond_expected_keys(monkeypatch)
 
     assert "contact" not in row, "contact is popped, so the caller sees it consumed"
     assert row["apn"] == "123-456-78"
+
+
+def test_csv_phones_are_normalized_like_every_other_source(monkeypatch):
+    captured = _stub(monkeypatch)
+    row = _row(contact={"phone": "(209) 555-1212", "email": "  Maria@Example.COM "})
+
+    ingest.ingest_property_row(row)
+
+    assert captured["contacts"][0]["phone"] == "+12095551212", (
+        "a CSV lead stored in raw format will not dedupe against the same person calling in"
+    )
+    assert captured["lead_updates"]["owner_phone"] == "+12095551212"
+    assert captured["lead_updates"]["owner_email"] == "maria@example.com"
+
+
+def test_unparseable_csv_phone_is_kept_rather_than_dropped(monkeypatch):
+    captured = _stub(monkeypatch)
+    ingest.ingest_property_row(_row(contact={"phone": "ext 4471"}))
+
+    assert captured["contacts"][0]["phone"] == "ext 4471"

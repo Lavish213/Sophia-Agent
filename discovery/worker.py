@@ -8,6 +8,7 @@ from backend.lib import db
 from backend.lib.config import get_settings
 from backend.scout import skiptrace
 from backend.scout.reddit import fetch_matches
+from backend.scout.stale_listings import run_stale_listing_pass
 
 
 def run_skiptrace_pass() -> dict:
@@ -48,6 +49,7 @@ def run_once() -> dict:
             logger.error("discovery_match_failed reddit_id={} error={}", match.get("reddit_id"), str(e))
 
     results["skiptrace"] = run_skiptrace_pass()
+    results["stale_listings"] = run_stale_listing_pass()
 
     logger.info("discovery_run_once_complete results={}", results)
     return results

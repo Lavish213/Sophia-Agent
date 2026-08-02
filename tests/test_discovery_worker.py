@@ -1,5 +1,14 @@
+import pytest
+
 from backend.lib import db
 from discovery import worker
+
+
+@pytest.fixture(autouse=True)
+def _stub_stale_listing_pass(monkeypatch):
+    monkeypatch.setattr(
+        worker, "run_stale_listing_pass", lambda: {"checked": 0, "flagged": 0}
+    )
 
 
 def _match(reddit_id="p1"):

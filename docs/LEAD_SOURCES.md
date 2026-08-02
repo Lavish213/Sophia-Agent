@@ -68,6 +68,36 @@ someone who contacts you is worth more than someone you found.
   high-quality, but requires an MLS membership and API credentials. Build
   the adapter when you have the license, not before.
 
+### Stale listings (days on market)
+
+A listing that has sat 60–70+ days is a strong signal: the price is wrong,
+the seller is frustrated, and a cash offer starts to look reasonable. The
+discovery worker flags any property whose `days_on_market` crosses
+`STALE_LISTING_MIN_DAYS` (default 65) and creates a lead automatically.
+
+**Who gets contacted depends on listing status, and this is not a style
+choice.** While a property is actively listed the seller is under an
+exclusive agreement with their agent. Approaching that seller directly can
+be **intentional interference with contract** under California law, and
+punitive damages are available where the interference is found to be
+malicious. So:
+
+| Listing status | Outreach goes to |
+|---|---|
+| active, listed, for_sale, pending | the **listing agent** |
+| expired, withdrawn, cancelled, off_market | the **owner**, directly |
+| unknown | nobody — held for review |
+
+Expired listings are the classic play here and carry none of that risk: the
+agreement is over, and the owner has just spent months not selling.
+
+**Where the data comes from matters.** Zillow, Redfin, and Realtor.com all
+forbid scraping in their terms, and enforce it. This feature reads
+`days_on_market` off whatever populates the properties table — a CSV export,
+or an MLS/RESO feed if you have a license. It does not scrape those sites,
+and adding a scraper for them would put the business at risk for a field
+you can obtain legitimately.
+
 ### Rejected — and why
 
 - **Eviction / unlawful detainer filings. Do not build this.** California

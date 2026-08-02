@@ -19,6 +19,8 @@ _SITUATION_LABELS: dict[str, str] = {
     "divorce": "divorce",
     "tax": "tax_delinquent",
     "code": "code_violation",
+    "stale_listing": "stale_listing",
+    "expired_listing": "expired_listing",
 }
 
 

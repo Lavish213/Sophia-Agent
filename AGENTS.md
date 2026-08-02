@@ -75,6 +75,7 @@ backend/voice/                → Pipecat pipeline + SignalWire + tools
 backend/voice/prompts/        → Sophia's system prompt (one file)
 backend/alerts/                → SMS (SignalWire) + email (SendGrid) + post-call follow-up
 backend/scout/intake.py        → the one path every lead source funnels through
+backend/scout/stale_listings.py → high days-on-market outreach, agent vs owner routing
 backend/scout/skiptrace.py     → BatchData skip trace + DNC/TCPA scrub, address to phone
 backend/scout/reddit.py        → Reddit intent-scoring + fetch logic (also used by discovery/)
 backend/scout/convert.py       → converts a reddit_match into a property/contact/lead
@@ -159,10 +160,25 @@ inbound_call    → unknown caller, created in backend/voice/context.py
 inbound_sms     → unknown texter, created in backend/alerts/sms.py
 reddit          → discovery worker, needs manual contact-finding
 skiptrace       → enrichment, not a source of new leads
+stale_listing   → listing sat past STALE_LISTING_MIN_DAYS, routed by listing status
 
 A STOP text from an unknown number goes to dnc_list and does NOT create a
 lead. See docs/LEAD_SOURCES.md for the full research, costs, and the
 sources that were deliberately rejected (notably CA eviction records).
+
+## STALE LISTINGS
+A listing past STALE_LISTING_MIN_DAYS days is flagged by the discovery
+worker. Who gets contacted is decided by listing_status and is a legal
+constraint, not a preference: while a property is actively listed the
+seller is under an exclusive agreement, and contacting them directly
+risks intentional interference with contract under California law, with
+punitive damages available. Active listings therefore route to the
+listing agent, expired/withdrawn/cancelled route to the owner, and an
+unknown status is flagged for review and contacted by nobody.
+
+Never add a scraper for Zillow, Redfin, or Realtor.com to feed this.
+They forbid it and enforce it. days_on_market comes from CSV import or
+a licensed MLS feed.
 
 ## LEAD DISCOVERY (REDDIT)
 The discovery worker (discovery/main.py) runs on its own schedule

@@ -558,6 +558,34 @@ def save_call_brief(lead_id: str, brief: dict) -> None:
     logger.info("save_call_brief lead_id={}", lead_id)
 
 
+def now_iso() -> str:
+    return _now()
+
+
+def update_property_fields(property_id: str, fields: dict) -> None:
+    if not fields:
+        return
+    client = get_client()
+    data = dict(fields)
+    data["updated_at"] = _now()
+    client.table("properties").update(data).eq("id", property_id).execute()
+    logger.debug("update_property_fields property_id={} fields={}", property_id, list(fields.keys()))
+
+
+def get_unflagged_stale_listings(min_days: int = 60, limit: int = 50) -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("properties")
+        .select("*")
+        .gte("days_on_market", min_days)
+        .is_("stale_listing_flagged_at", "null")
+        .order("days_on_market", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return response.data
+
+
 def list_active_buyers(limit: int = 500) -> list[dict]:
     client = get_client()
     response = (

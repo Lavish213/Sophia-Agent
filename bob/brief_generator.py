@@ -18,6 +18,8 @@ _OPENER_HINTS: dict[str, str] = {
     "divorce": "neutral tone — do not reference the other party",
     "vacant_property": "property is likely a pain point — lead with that",
     "distressed_seller": "follow their emotion first before any questions",
+    "stale_listing": "their listing has sat a while — lead with that, not with price",
+    "expired_listing": "listing just expired — they are likely frustrated with agents",
 }
 
 _SITUATION_MOOD: dict[str, str] = {

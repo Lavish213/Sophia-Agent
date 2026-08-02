@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     voicemail_voice: str = ""
     max_voicemails_per_lead: int = 3
 
+    stale_listing_min_days: int = 65
+    stale_listing_batch_size: int = 50
+
     batchdata_api_key: str = ""
     skiptrace_batch_size: int = 25
 

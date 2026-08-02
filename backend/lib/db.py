@@ -667,6 +667,15 @@ def get_blasts_for_property(property_id: str) -> list[dict]:
     return response.data
 
 
+def list_decision_records(limit: int = 100, lead_id: str | None = None) -> list[dict]:
+    client = get_client()
+    query = client.table("decision_records").select("*, leads(id, properties(address))")
+    if lead_id:
+        query = query.eq("lead_id", lead_id)
+    response = query.order("created_at", desc=True).limit(limit).execute()
+    return response.data
+
+
 def start_worker_run(worker: str) -> str | None:
     client = get_client()
     response = client.table("worker_runs").insert({"worker": worker, "status": "running"}).execute()

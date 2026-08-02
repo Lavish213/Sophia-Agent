@@ -102,7 +102,7 @@ def generate_call_brief(
         missing_box = select_missing_checkbox(intel_packet, seller_memory, lead, prop)
         phase = _derive_phase(missing_box, call_count)
         objective = get_objective(missing_box, phase)
-        avoid = build_avoidances(intel_packet, situation_label, call_count)
+        avoid = build_avoidances(intel_packet, situation_label, call_count, property_row=prop)
         escalation_rules = build_escalation_rules(intel_packet, situation_label, seller_memory)
         mood = _derive_mood(intel_packet, seller_memory, situation_label, initial_trust, is_outbound, call_count)
 

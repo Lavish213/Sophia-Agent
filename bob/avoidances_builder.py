@@ -16,7 +16,12 @@ _CREATIVE_FINANCE_OK = frozenset([
 ])
 
 
-def build_avoidances(intel_packet: dict, situation_label: str, call_count: int = 0) -> list[str]:
+def build_avoidances(
+    intel_packet: dict,
+    situation_label: str,
+    call_count: int = 0,
+    property_row: dict | None = None,
+) -> list[str]:
     avoid = list(_ALWAYS_AVOID)
 
     sit = (situation_label or "").lower()
@@ -27,13 +32,23 @@ def build_avoidances(intel_packet: dict, situation_label: str, call_count: int =
                     avoid.append(e)
 
     distress = ""
-    prop = (intel_packet or {}).get("property_profile") or {}
-    if isinstance(prop.get("distress_type"), dict):
-        distress = (prop["distress_type"].get("value") or "").lower()
-    elif isinstance(prop.get("distress_type"), str):
-        distress = prop["distress_type"].lower()
+    profile = (intel_packet or {}).get("property_profile") or {}
+    if isinstance(profile.get("distress_type"), dict):
+        distress = (profile["distress_type"].get("value") or "").lower()
+    elif isinstance(profile.get("distress_type"), str):
+        distress = profile["distress_type"].lower()
 
-    if not any(s in distress for s in _CREATIVE_FINANCE_OK):
+    row = property_row or {}
+    if not distress:
+        distress = (row.get("distress_type") or "").lower()
+
+    creative_ok = (
+        any(s in distress for s in _CREATIVE_FINANCE_OK)
+        or any(s in sit for s in _CREATIVE_FINANCE_OK)
+        or bool(row.get("free_and_clear"))
+        or bool(row.get("absentee_owner"))
+    )
+    if not creative_ok:
         avoid.append("creative finance discussion")
 
     strategy = (intel_packet or {}).get("strategy_context") or {}

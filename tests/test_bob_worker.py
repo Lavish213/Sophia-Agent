@@ -174,3 +174,66 @@ def test_occupancy_learned_on_a_call_counts_even_when_property_data_is_silent():
     memory = worker.build_seller_memory(lead)
 
     assert select_missing_checkbox({}, memory, lead, {"address": "1 A St"}) != "occupancy"
+
+
+def test_creative_finance_is_allowed_where_the_whitelist_says_it_should_be():
+    from bob.avoidances_builder import build_avoidances
+
+    cases = [
+        ("preforeclosure", {"distress_type": "pre_foreclosure"}),
+        ("unknown", {"free_and_clear": True}),
+        ("unknown", {"absentee_owner": True}),
+    ]
+    for label, prop in cases:
+        avoid = build_avoidances({}, label, 1, property_row=prop)
+        assert "creative finance discussion" not in avoid, (
+            f"{label}/{prop} is on the creative-finance whitelist but Bob still blocked it"
+        )
+
+
+def test_creative_finance_still_blocked_where_it_is_not_appropriate():
+    from bob.avoidances_builder import build_avoidances
+
+    avoid = build_avoidances({}, "probate", 1, property_row={"distress_type": "probate"})
+    assert "creative finance discussion" in avoid
+
+
+def test_pricing_and_legal_advice_are_always_avoided():
+    from bob.avoidances_builder import build_avoidances
+
+    for label in ("preforeclosure", "probate", "unknown", ""):
+        avoid = build_avoidances({}, label, 1, property_row={})
+        assert "pricing" in avoid
+        assert "legal advice" in avoid
+
+
+def test_the_ladder_matches_the_documented_priority_order():
+    from bob.checkbox_selector import select_missing_checkbox
+    from bob.contracts import CHECKBOX_PRIORITY
+
+    prop = {"address": "1 A St"}
+    known: dict = {"call_attempts": 1, "call_summary": "spoke"}
+    satisfies = {
+        "occupancy": ("occupancy", "owner occupied"),
+        "condition": ("property_condition", "roof leaks"),
+        "timeline": ("timeline_urgency", "asap"),
+        "motivation": ("motivation_level", 8),
+    }
+
+    seen = []
+    for _ in range(len(CHECKBOX_PRIORITY) + 1):
+        box = select_missing_checkbox({}, worker.build_seller_memory(known), known, prop)
+        seen.append(box)
+        if box not in satisfies:
+            break
+        field, value = satisfies[box]
+        known[field] = value
+
+    for box in seen:
+        assert box in CHECKBOX_PRIORITY, (
+            f"{box} is not in contracts.CHECKBOX_PRIORITY — the ladder and the documented "
+            "order have drifted apart"
+        )
+
+    positions = [CHECKBOX_PRIORITY.index(b) for b in seen]
+    assert positions == sorted(positions), f"ladder went backwards: {seen}"

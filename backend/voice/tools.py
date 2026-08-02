@@ -39,6 +39,14 @@ def book_appointment(lead_id: str, appointment_at_iso: str, notes: str | None = 
         db.update_lead_fields(lead_id, {"operator_notes": notes})
 
     logger.info("appointment_booked lead_id={} at={}", lead_id, appointment_at_iso)
+
+    from backend.alerts.owner import alert_appointment
+
+    try:
+        alert_appointment(lead_id, appointment_at_iso)
+    except Exception as e:
+        logger.error("appointment_alert_failed lead_id={} error={}", lead_id, str(e))
+
     return {"success": True}
 
 
@@ -49,6 +57,14 @@ def request_owner_callback(lead_id: str, reason: str) -> dict:
         "operator_notes": reason,
     })
     logger.info("owner_callback_requested lead_id={} reason={}", lead_id, reason)
+
+    from backend.alerts.owner import alert_escalation
+
+    try:
+        alert_escalation(lead_id, reason)
+    except Exception as e:
+        logger.error("escalation_alert_failed lead_id={} error={}", lead_id, str(e))
+
     return {"success": True}
 
 
@@ -100,7 +116,7 @@ def mark_call_ended(lead_id: str, disposition: str) -> dict:
     if disposition == "HOT":
         db.update_lead_fields(lead_id, {"is_hot_lead": True})
     elif disposition == "DEAD":
-        db.update_lead_fields(lead_id, {"opted_out": False, "callable": False})
+        db.update_lead_fields(lead_id, {"callable": False, "stage": "dead"})
 
     logger.info("mark_call_ended lead_id={} disposition={}", lead_id, disposition)
     return {"success": True, "disposition": disposition}

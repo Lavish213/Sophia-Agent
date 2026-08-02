@@ -115,6 +115,14 @@ def send_post_call_followup(lead_id: str, call_id: str, disposition: str | None)
             results["email"] = send_email(lead_id, "Tried to reach you", _no_answer_email_body(lead))
         return results
 
+    if disposition == "HOT":
+        from backend.alerts.owner import alert_hot_lead
+
+        try:
+            alert_hot_lead(lead_id)
+        except Exception as e:
+            logger.error("hot_lead_alert_failed lead_id={} error={}", lead_id, str(e))
+
     if disposition in ("HOT", "WARM"):
         body = _conversation_sms_body(lead)
         if body and lead.get("owner_phone"):

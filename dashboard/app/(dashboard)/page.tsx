@@ -16,6 +16,14 @@ export default async function HomePage() {
     .order("updated_at", { ascending: false })
     .limit(10);
 
+  const { data: needsYou } = await supabase
+    .from("leads")
+    .select("id, operator_notes, updated_at, properties(address)")
+    .eq("priority_callback", true)
+    .not("stage", "in", "(closed,dead)")
+    .order("updated_at", { ascending: false })
+    .limit(10);
+
   const { data: recentCalls } = await supabase
     .from("calls")
     .select("id, call_disposition, direction, created_at, leads(id, properties(address))")
@@ -33,6 +41,30 @@ export default async function HomePage() {
         <h1 className="text-2xl font-semibold">Overview</h1>
         <p className="text-white/50">{activeLeadsCount ?? 0} active leads in the pipeline</p>
       </div>
+
+      {(needsYou ?? []).length > 0 && (
+        <section>
+          <h2 className="mb-1 text-lg font-medium text-amber-300">Waiting on you</h2>
+          <p className="mb-3 text-sm text-white/50">
+            Sophia handed these to you — the seller asked for a person, or it went past what she
+            should answer.
+          </p>
+          <div className="divide-y divide-white/10 rounded border border-amber-500/30">
+            {(needsYou ?? []).map((lead: any) => (
+              <Link
+                key={lead.id}
+                href={`/leads/${lead.id}`}
+                className="block p-4 hover:bg-white/5"
+              >
+                <div className="font-medium">{lead.properties?.address ?? "Unknown address"}</div>
+                {lead.operator_notes && (
+                  <div className="text-sm text-white/60">{lead.operator_notes}</div>
+                )}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-lg font-medium">Hot leads</h2>

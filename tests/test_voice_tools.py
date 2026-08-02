@@ -218,3 +218,60 @@ def test_sophia_has_a_tool_for_every_promise_the_prompt_makes():
 
     assert "send_details" in names, "the prompt offers to text or email; she needs the tool"
     assert "send details tool" in load_system_prompt()
+
+
+def test_dead_disposition_never_resets_an_existing_opt_out(monkeypatch):
+    from backend.voice.tools import mark_call_ended
+
+    captured = {}
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: captured.update(f))
+
+    mark_call_ended("lead-1", "DEAD")
+
+    assert "opted_out" not in captured, (
+        "writing opted_out=False on a dead call would un-opt-out someone who replied STOP"
+    )
+    assert captured["callable"] is False
+    assert captured["stage"] == "dead"
+
+
+def test_escalation_alerts_the_owner(monkeypatch):
+    from backend.alerts import owner
+    from backend.voice.tools import request_owner_callback
+
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: None)
+    alerted = {}
+    monkeypatch.setattr(owner, "alert_escalation", lambda lid, reason: alerted.update(reason=reason))
+
+    request_owner_callback("lead-1", "wants to talk to a human")
+
+    assert alerted["reason"] == "wants to talk to a human", (
+        "a seller asking for a human must reach a human, not just set a flag"
+    )
+
+
+def test_a_failing_owner_alert_does_not_break_the_call(monkeypatch):
+    from backend.alerts import owner
+    from backend.voice.tools import request_owner_callback
+
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: None)
+
+    def _boom(lid, reason):
+        raise RuntimeError("signalwire down")
+
+    monkeypatch.setattr(owner, "alert_escalation", _boom)
+
+    assert request_owner_callback("lead-1", "x")["success"] is True
+
+
+def test_booking_an_appointment_alerts_the_owner(monkeypatch):
+    from backend.alerts import owner
+    from backend.voice.tools import book_appointment
+
+    monkeypatch.setattr(db, "update_lead_appointment", lambda lid, at: None)
+    alerted = {}
+    monkeypatch.setattr(owner, "alert_appointment", lambda lid, at: alerted.update(at=at))
+
+    book_appointment("lead-1", "2026-08-01T15:00:00Z")
+
+    assert alerted["at"] == "2026-08-01T15:00:00Z"

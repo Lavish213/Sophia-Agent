@@ -667,6 +667,41 @@ def get_blasts_for_property(property_id: str) -> list[dict]:
     return response.data
 
 
+def start_worker_run(worker: str) -> str | None:
+    client = get_client()
+    response = client.table("worker_runs").insert({"worker": worker, "status": "running"}).execute()
+    return response.data[0]["id"] if response.data else None
+
+
+def finish_worker_run(
+    run_id: str, status: str, results: dict, duration_ms: int, error: str | None
+) -> None:
+    client = get_client()
+    client.table("worker_runs").update({
+        "status": status,
+        "results": results,
+        "duration_ms": duration_ms,
+        "error": error,
+        "finished_at": _now(),
+    }).eq("id", run_id).execute()
+
+
+def get_latest_worker_runs() -> list[dict]:
+    client = get_client()
+    response = (
+        client.table("worker_runs")
+        .select("*")
+        .order("started_at", desc=True)
+        .limit(200)
+        .execute()
+    )
+    latest: dict[str, dict] = {}
+    for row in response.data:
+        if row["worker"] not in latest:
+            latest[row["worker"]] = row
+    return list(latest.values())
+
+
 def health_check() -> bool:
     client = get_client()
     client.table("leads").select("id").limit(1).execute()

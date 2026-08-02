@@ -6,6 +6,7 @@ from loguru import logger
 
 from backend.lib import db
 from backend.lib.config import get_settings
+from backend.lib.heartbeat import record_run
 from backend.scout import skiptrace
 from backend.scout.reddit import fetch_matches
 from backend.scout.stale_listings import run_stale_listing_pass
@@ -32,7 +33,7 @@ def run_skiptrace_pass() -> dict:
     return results
 
 
-def run_once() -> dict:
+def _run_once_inner() -> dict:
     logger.info("discovery_run_once_starting")
 
     matches = fetch_matches()
@@ -64,3 +65,10 @@ def run_loop() -> None:
         except Exception as e:
             logger.error("discovery_loop_error error={}", str(e))
         time.sleep(settings.reddit_poll_interval_minutes * 60)
+
+
+def run_once() -> dict:
+    with record_run("discovery") as results:
+        outcome = _run_once_inner()
+        results.update(outcome)
+        return outcome

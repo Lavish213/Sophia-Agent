@@ -17,6 +17,7 @@ from backend.api.routes import (
     offers,
     properties,
     sms_webhook,
+    workers,
 )
 from backend.voice.webhook import router as voice_router
 
@@ -47,3 +48,4 @@ app.include_router(sms_webhook.router, prefix="/api")
 app.include_router(discovery.router, prefix="/api")
 app.include_router(intake.router, prefix="/api")
 app.include_router(dispo.router, prefix="/api")
+app.include_router(workers.router, prefix="/api")

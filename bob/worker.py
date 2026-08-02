@@ -6,6 +6,7 @@ from loguru import logger
 
 from backend.lib import db
 from backend.lib.config import get_settings
+from backend.lib.heartbeat import record_run
 from bob.brief_generator import generate_call_brief
 from bob.decision_logger import log_decision
 
@@ -50,7 +51,7 @@ def get_situation_label(prop: dict) -> str:
     return "unknown"
 
 
-def run_once() -> dict:
+def _run_once_inner() -> dict:
     settings = get_settings()
     logger.info("bob_worker_run_once_starting")
 
@@ -127,3 +128,10 @@ def run_loop() -> None:
         except Exception as e:
             logger.error("bob_worker_loop_error error={}", str(e))
         time.sleep(settings.bob_worker_interval_minutes * 60)
+
+
+def run_once() -> dict:
+    with record_run("bob") as results:
+        outcome = _run_once_inner()
+        results.update(outcome)
+        return outcome

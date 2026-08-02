@@ -5,6 +5,7 @@ import time
 from loguru import logger
 
 from backend.lib.config import get_settings
+from backend.lib.heartbeat import record_run
 from backend.voice.outbound import place_outbound_call
 from dialer.concurrency import has_capacity
 
@@ -25,7 +26,7 @@ def _fetch_due_leads() -> list[dict]:
     )
 
 
-def run_once() -> dict:
+def _run_once_inner() -> dict:
     logger.info("dialer_run_once_starting")
 
     results = {"attempted": 0, "placed": 0, "skipped_capacity": 0, "skipped_compliance": 0, "errors": 0}
@@ -70,3 +71,10 @@ def run_loop() -> None:
         except Exception as e:
             logger.error("dialer_loop_error error={}", str(e))
         time.sleep(settings.dialer_interval_minutes * 60)
+
+
+def run_once() -> dict:
+    with record_run("dialer") as results:
+        outcome = _run_once_inner()
+        results.update(outcome)
+        return outcome

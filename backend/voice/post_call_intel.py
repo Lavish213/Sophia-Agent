@@ -16,6 +16,8 @@ _EXTRACTION_TOOL = {
             "disposition": {"type": "string", "enum": ["HOT", "WARM", "COLD", "DEAD"]},
             "motivation_level": {"type": "integer", "minimum": 0, "maximum": 10},
             "timeline_urgency": {"type": "string"},
+            "occupancy": {"type": "string"},
+            "property_condition": {"type": "string"},
             "price_floor_dollars": {"type": ["integer", "null"]},
             "objections": {"type": "array", "items": {"type": "string"}},
             "call_summary": {"type": "string"},
@@ -68,6 +70,8 @@ def extract_call_intel(transcript_chunks: list[dict]) -> dict | None:
 def apply_call_intel(call_id: str, lead_id: str | None, intel: dict) -> None:
     call_fields = {
         "call_disposition": intel.get("disposition"),
+        "occupancy": intel.get("occupancy"),
+        "property_condition": intel.get("property_condition"),
         "call_summary": intel.get("call_summary"),
         "next_step": intel.get("next_best_action"),
         "objections": json.dumps(intel.get("objections") or []),
@@ -81,6 +85,8 @@ def apply_call_intel(call_id: str, lead_id: str | None, intel: dict) -> None:
         "call_summary": intel.get("call_summary"),
         "next_best_action": intel.get("next_best_action"),
         "timeline_urgency": intel.get("timeline_urgency"),
+        "occupancy": intel.get("occupancy"),
+        "property_condition": intel.get("property_condition"),
     }
     if intel.get("motivation_level") is not None:
         lead_fields["motivation_level"] = intel["motivation_level"]

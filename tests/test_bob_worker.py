@@ -67,8 +67,8 @@ def test_seller_memory_is_built_from_what_calls_actually_learned():
 
     assert memory["motivation_level"] == 8
     assert memory["price_floor"] == 15000000
-    assert memory["timeline_urgency"] == "asap"
-    assert memory["objections"] == ["needs to talk to sister"]
+    assert memory["timeline_mentioned"] == "asap"
+    assert memory["objections_raised"] == ["needs to talk to sister"]
     assert memory["call_summaries"] == ["Wants out before the auction."]
 
 
@@ -114,3 +114,63 @@ def test_never_called_lead_with_a_brief_is_not_regenerated():
     from backend.lib.db import brief_is_stale
 
     assert brief_is_stale({"call_brief": {"objective": "x"}, "last_called_at": None}) is False
+
+
+def _lead_after(**facts):
+    lead = {"call_attempts": facts.pop("attempts", 1), "call_summary": "spoke with them"}
+    lead.update(facts)
+    return lead
+
+
+def test_memory_uses_the_key_names_bob_actually_reads():
+    memory = worker.build_seller_memory(
+        _lead_after(timeline_urgency="asap", objections=["needs sister"], property_condition="roof")
+    )
+
+    assert "timeline_mentioned" in memory, "checkbox_selector reads timeline_mentioned"
+    assert "objections_raised" in memory, "brief_generator reads objections_raised"
+    assert "hot_topics" in memory, "checkbox_selector reads hot_topics"
+
+
+def test_scalar_facts_are_wrapped_for_list_readers():
+    memory = worker.build_seller_memory(_lead_after(property_condition="roof leaks"))
+    assert memory["hot_topics"] == ["roof leaks"]
+
+
+def test_checkbox_ladder_advances_as_sophia_learns():
+    from bob.checkbox_selector import select_missing_checkbox
+
+    prop = {"address": "123 Main St"}
+    steps = [
+        ({}, "right_person"),
+        (_lead_after(occupancy="owner occupied"), "condition"),
+        (_lead_after(occupancy="owner occupied", property_condition="roof"), "timeline"),
+        (
+            _lead_after(occupancy="owner occupied", property_condition="roof", timeline_urgency="asap"),
+            "motivation",
+        ),
+        (
+            _lead_after(
+                occupancy="owner occupied",
+                property_condition="roof",
+                timeline_urgency="asap",
+                motivation_level=8,
+            ),
+            "next_step",
+        ),
+    ]
+
+    for lead, expected in steps:
+        memory = worker.build_seller_memory(lead)
+        assert select_missing_checkbox({}, memory, lead, prop) == expected, (
+            f"ladder stalled at {expected}; bob would ask the same question on every call"
+        )
+
+
+def test_occupancy_learned_on_a_call_counts_even_when_property_data_is_silent():
+    from bob.checkbox_selector import select_missing_checkbox
+
+    lead = _lead_after(occupancy="tenant occupied")
+    memory = worker.build_seller_memory(lead)
+
+    assert select_missing_checkbox({}, memory, lead, {"address": "1 A St"}) != "occupancy"

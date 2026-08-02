@@ -7,7 +7,11 @@ def select_missing_checkbox(intel_packet: dict, seller_memory: dict, lead: dict,
     motivation_level = seller_memory.get("motivation_level")
 
     distress = (prop.get("distress_type") or "").lower()
-    occupancy_known = "vacant" in distress or prop.get("vacant") is True
+    occupancy_known = (
+        bool(seller_memory.get("occupancy_known"))
+        or "vacant" in distress
+        or prop.get("vacant") is True
+    )
 
     call_count = len(call_summaries)
     owner_confirmed = call_count > 0

@@ -25,13 +25,27 @@ _SITUATION_LABELS: dict[str, str] = {
 }
 
 
+_LEAD_FIELD_TO_MEMORY_KEY = {
+    "motivation_level": "motivation_level",
+    "price_floor": "price_floor",
+    "next_best_action": "next_best_action",
+    "timeline_urgency": "timeline_mentioned",
+    "objections": "objections_raised",
+    "property_condition": "hot_topics",
+    "occupancy": "occupancy_known",
+}
+
+
 def build_seller_memory(lead: dict) -> dict:
     memory: dict = {}
 
-    for key in ("motivation_level", "price_floor", "timeline_urgency", "objections", "next_best_action"):
-        value = lead.get(key)
-        if value is not None:
-            memory[key] = value
+    for lead_field, memory_key in _LEAD_FIELD_TO_MEMORY_KEY.items():
+        value = lead.get(lead_field)
+        if value is None:
+            continue
+        if memory_key in ("hot_topics", "objections_raised") and not isinstance(value, list):
+            value = [value]
+        memory[memory_key] = value
 
     summary = lead.get("call_summary")
     attempts = lead.get("call_attempts") or 0

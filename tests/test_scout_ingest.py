@@ -42,29 +42,29 @@ def test_distress_score_is_written_as_an_integer(monkeypatch):
 
 def test_contact_is_stripped_before_the_property_upsert(monkeypatch):
     captured = _stub(monkeypatch)
-    row = _row(contact={"name": "Maria", "phone": "2095551212", "email": "m@example.com"})
+    row = _row(contact={"name": "Maria", "phone": "2094771234", "email": "m@example.com"})
 
     ingest.ingest_property_row(row)
 
     assert "contact" not in captured["property"], "contact must never reach the properties table"
-    assert captured["contacts"][0]["phone"] == "+12095551212"
+    assert captured["contacts"][0]["phone"] == "+12094771234"
 
 
 def test_contact_details_are_promoted_onto_the_lead(monkeypatch):
     captured = _stub(monkeypatch)
-    row = _row(contact={"phone": "2095551212", "phone_2": "2095559999", "email": "m@example.com"})
+    row = _row(contact={"phone": "2094771234", "phone_2": "2094779999", "email": "m@example.com"})
 
     ingest.ingest_property_row(row)
 
-    assert captured["lead_updates"]["owner_phone"] == "+12095551212"
-    assert captured["lead_updates"]["owner_phone_2"] == "+12095559999"
+    assert captured["lead_updates"]["owner_phone"] == "+12094771234"
+    assert captured["lead_updates"]["owner_phone_2"] == "+12094779999"
     assert captured["lead_updates"]["owner_email"] == "m@example.com"
 
 
 def test_existing_lead_contact_details_are_not_overwritten(monkeypatch):
-    existing = {"id": "lead-1", "owner_phone": "2095550000", "owner_email": "old@example.com"}
+    existing = {"id": "lead-1", "owner_phone": "2094770000", "owner_email": "old@example.com"}
     captured = _stub(monkeypatch, lead=existing)
-    row = _row(contact={"phone": "2095551212", "email": "new@example.com"})
+    row = _row(contact={"phone": "2094771234", "email": "new@example.com"})
 
     ingest.ingest_property_row(row)
 
@@ -100,7 +100,11 @@ def test_failed_property_upsert_returns_cleanly_without_a_lead(monkeypatch):
 
 def test_csv_batch_counts_processed_and_created(monkeypatch):
     _stub(monkeypatch)
-    result = ingest.ingest_csv_rows([_row(apn="1"), _row(apn="2"), _row(apn="3")])
+    result = ingest.ingest_csv_rows([
+        _row(apn="1", address="1 A St"),
+        _row(apn="2", address="2 B St"),
+        _row(apn="3", address="3 C St"),
+    ])
     assert result["processed"] == 3
     assert result["leads_created"] == 3
     assert result["errors"] == 0
@@ -120,7 +124,11 @@ def test_one_bad_row_does_not_abort_the_whole_import(monkeypatch):
     monkeypatch.setattr(db, "get_or_create_lead", lambda pid: {"id": "lead-1"})
     monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: None)
 
-    result = ingest.ingest_csv_rows([_row(apn="1"), _row(apn="bad"), _row(apn="3")])
+    result = ingest.ingest_csv_rows([
+        _row(apn="1", address="1 A St"),
+        _row(apn="bad", address="2 B St"),
+        _row(apn="3", address="3 C St"),
+    ])
 
     assert result["processed"] == 2
     assert result["errors"] == 1
@@ -129,12 +137,14 @@ def test_one_bad_row_does_not_abort_the_whole_import(monkeypatch):
 
 def test_empty_csv_is_not_an_error(monkeypatch):
     result = ingest.ingest_csv_rows([])
-    assert result == {"processed": 0, "leads_created": 0, "errors": 0}
+    assert result["processed"] == 0
+    assert result["leads_created"] == 0
+    assert result["errors"] == 0
 
 
 def test_ingest_does_not_mutate_the_caller_row_beyond_expected_keys(monkeypatch):
     _stub(monkeypatch)
-    row = _row(contact={"phone": "2095551212"})
+    row = _row(contact={"phone": "2094771234"})
 
     ingest.ingest_property_row(row)
 
@@ -144,19 +154,24 @@ def test_ingest_does_not_mutate_the_caller_row_beyond_expected_keys(monkeypatch)
 
 def test_csv_phones_are_normalized_like_every_other_source(monkeypatch):
     captured = _stub(monkeypatch)
-    row = _row(contact={"phone": "(209) 555-1212", "email": "  Maria@Example.COM "})
+    row = _row(contact={"phone": "(209) 477-1234", "email": "  Maria@Example.COM "})
 
     ingest.ingest_property_row(row)
 
-    assert captured["contacts"][0]["phone"] == "+12095551212", (
+    assert captured["contacts"][0]["phone"] == "+12094771234", (
         "a CSV lead stored in raw format will not dedupe against the same person calling in"
     )
-    assert captured["lead_updates"]["owner_phone"] == "+12095551212"
+    assert captured["lead_updates"]["owner_phone"] == "+12094771234"
     assert captured["lead_updates"]["owner_email"] == "maria@example.com"
 
 
-def test_unparseable_csv_phone_is_kept_rather_than_dropped(monkeypatch):
+def test_unusable_phone_is_dropped_but_the_property_is_kept(monkeypatch):
     captured = _stub(monkeypatch)
-    ingest.ingest_property_row(_row(contact={"phone": "ext 4471"}))
 
-    assert captured["contacts"][0]["phone"] == "ext 4471"
+    result = ingest.ingest_property_row(_row(contact={"phone": "209-555-0100"}))
+
+    assert result["property_id"] == "prop-1", (
+        "a junk phone must not cost us the property — skip trace can still find a real number"
+    )
+    assert captured["lead_updates"].get("owner_phone") is None
+    assert "phone_looks_fake" in captured["property"]["data_issues"]

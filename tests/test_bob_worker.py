@@ -20,6 +20,10 @@ def test_run_once_processes_leads_and_saves_briefs(monkeypatch):
     monkeypatch.setattr(db, "get_seller_memory", lambda lead_id: {})
     monkeypatch.setattr(db, "save_call_brief", lambda lead_id, brief: saved_briefs.__setitem__(lead_id, brief))
     monkeypatch.setattr(db, "save_decision_record", lambda record: decision_records.append(record))
+    priority_writes = {}
+    monkeypatch.setattr(
+        db, "update_lead_fields", lambda lid, fields: priority_writes.update(fields)
+    )
 
     results = run_once()
 
@@ -29,6 +33,10 @@ def test_run_once_processes_leads_and_saves_briefs(monkeypatch):
     assert "lead-1" in saved_briefs
     assert saved_briefs["lead-1"]["missing_box"] == "right_person"
     assert len(decision_records) == 1
+    assert "call_priority" in priority_writes, (
+        "bob ranks the lead in the same pass he plans it, so the dialer can use the order"
+    )
+    assert "waiting_on_human" in priority_writes
 
 
 def test_run_once_skips_leads_without_id(monkeypatch):

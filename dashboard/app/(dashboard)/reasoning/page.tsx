@@ -27,6 +27,16 @@ function confidenceLabel(value: number | null): string {
 export default async function ReasoningPage() {
   const supabase = createClient();
 
+  const { data: queue } = await supabase
+    .from("leads")
+    .select("id, call_priority, priority_reasons, waiting_on_human, properties(address)")
+    .eq("callable", true)
+    .eq("opted_out", false)
+    .not("stage", "in", "(closed,dead)")
+    .order("waiting_on_human", { ascending: false })
+    .order("call_priority", { ascending: false })
+    .limit(15);
+
   const { data: records } = await supabase
     .from("decision_records")
     .select("*, leads(id, properties(address))")
@@ -45,6 +55,40 @@ export default async function ReasoningPage() {
           plans look wrong here, the calls will go wrong too.
         </p>
       </div>
+
+      <section>
+        <h2 className="mb-1 text-lg font-medium">Who Bob would call next</h2>
+        <p className="mb-3 text-sm text-white/50">
+          Ranked by what he knows, not just the distress score. Anyone who asked for a callback
+          goes first regardless of how the property scores.
+        </p>
+        <div className="divide-y divide-white/10 rounded border border-white/10">
+          {(queue ?? []).map((lead: any, i: number) => (
+            <Link key={lead.id} href={`/leads/${lead.id}`} className="block p-3 hover:bg-white/5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-sm">
+                  <span className="mr-2 text-white/30">{i + 1}</span>
+                  {lead.properties?.address ?? "Unknown address"}
+                </span>
+                <span className="shrink-0 text-sm text-white/40">
+                  {lead.waiting_on_human ? "waiting on you · " : ""}
+                  {lead.call_priority ?? 0}
+                </span>
+              </div>
+              {(lead.priority_reasons ?? []).length > 0 && (
+                <div className="mt-1 text-xs text-white/35">
+                  {(lead.priority_reasons as string[]).join(" · ")}
+                </div>
+              )}
+            </Link>
+          ))}
+          {(queue ?? []).length === 0 && (
+            <p className="p-3 text-sm text-white/40">
+              No callable leads ranked yet. Bob scores each lead when he writes its brief.
+            </p>
+          )}
+        </div>
+      </section>
 
       <div className="space-y-3">
         {rows.map((record) => {

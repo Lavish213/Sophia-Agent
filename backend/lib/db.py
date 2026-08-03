@@ -195,7 +195,14 @@ def get_leads_for_outbound(min_score: int = 50, limit: int = 25, reattempt_hours
         if (r.get("properties") or {}).get("distress_score", 0) >= min_score
         and r.get("owner_phone")
     ]
-    results.sort(key=lambda r: (r.get("properties") or {}).get("distress_score", 0), reverse=True)
+    results.sort(
+        key=lambda r: (
+            bool(r.get("waiting_on_human")),
+            float(r.get("call_priority") or 0),
+            (r.get("properties") or {}).get("distress_score", 0),
+        ),
+        reverse=True,
+    )
     return results[:limit]
 
 

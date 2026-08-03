@@ -9,6 +9,7 @@ from backend.lib.config import get_settings
 from backend.lib.heartbeat import record_run
 from bob.brief_generator import generate_call_brief
 from bob.decision_logger import log_decision
+from bob.prioritizer import score_lead, waiting_on_a_human
 
 _SITUATION_LABELS: dict[str, str] = {
     "preforeclosure": "preforeclosure",
@@ -105,6 +106,13 @@ def _run_once_inner() -> dict:
 
             brief_dict = brief.to_dict()
             db.save_call_brief(lead_id, brief_dict)
+
+            priority, reasons = score_lead(lead)
+            db.update_lead_fields(lead_id, {
+                "call_priority": priority,
+                "priority_reasons": reasons,
+                "waiting_on_human": waiting_on_a_human(lead),
+            })
 
             log_decision(
                 lead_id=lead_id,

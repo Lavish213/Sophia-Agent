@@ -270,6 +270,13 @@ Anthropic, and Pipecat objects with throwaway API keys and assembles the
 actual pipeline. It never makes a network call — the point is to catch
 Pipecat API drift on upgrade, which otherwise only shows up mid-call.
 
+### Stopping outbound calling in a hurry
+
+Set `MAX_CONCURRENT_OUTBOUND=0` on the dialer service and restart it. The
+capacity check fails immediately, so the worker places no calls at all
+while still running and logging. This is the fastest way to stop outreach
+without a redeploy or a code change, and there is a test pinning it.
+
 ### Your first real call
 
 Everything above runs offline. Placing an actual call needs live

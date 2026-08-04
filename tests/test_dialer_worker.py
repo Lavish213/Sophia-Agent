@@ -1,3 +1,4 @@
+from backend.lib import db
 from dialer import worker
 
 
@@ -78,3 +79,40 @@ def test_run_once_empty_batch(monkeypatch):
     results = worker.run_once()
     assert results["attempted"] == 0
     assert results["placed"] == 0
+
+
+def test_max_concurrent_zero_is_a_kill_switch(monkeypatch):
+    from backend.lib.config import get_settings
+    from dialer.concurrency import has_capacity
+
+    monkeypatch.setenv("MAX_CONCURRENT_OUTBOUND", "0")
+    get_settings.cache_clear()
+    try:
+        monkeypatch.setattr(db, "count_active_calls", lambda **kwargs: 0)
+        assert has_capacity() is False, (
+            "setting MAX_CONCURRENT_OUTBOUND=0 is the documented way to stop all outbound "
+            "calling without a redeploy; it must hold even with no calls in flight"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_kill_switch_stops_the_worker_placing_any_call(monkeypatch):
+    from backend.lib.config import get_settings
+
+    monkeypatch.setenv("MAX_CONCURRENT_OUTBOUND", "0")
+    get_settings.cache_clear()
+    try:
+        monkeypatch.setattr(worker, "_fetch_due_leads", lambda: [{"id": "l1"}, {"id": "l2"}])
+        monkeypatch.setattr(db, "count_active_calls", lambda **kwargs: 0)
+
+        def _should_not_dial(lead_id):
+            raise AssertionError("placed a call while the kill switch was on")
+
+        monkeypatch.setattr(worker, "place_outbound_call", _should_not_dial)
+
+        results = worker._run_once_inner()
+
+        assert results["placed"] == 0
+    finally:
+        get_settings.cache_clear()

@@ -27,9 +27,11 @@ project's hard rules and full scope.
 ### 1. Supabase
 
 1. Create a new Supabase project.
-2. Open the SQL Editor and run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_outreach.sql`, then
-   `supabase/migrations/0003_discovery.sql`, in that order.
+2. Open the SQL Editor and run **every** file in `supabase/migrations/` in
+   numeric order, 0001 through 0010. Later migrations add columns the code
+   expects — skipping one produces "column does not exist" errors at
+   runtime rather than at deploy, so it is worth checking the highest
+   number in that directory against the last one you ran.
 3. Under Authentication → Users, create the one operator account (email +
    password) that will sign into the dashboard. This is a single-operator
    tool — there's no self-serve signup.

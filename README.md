@@ -7,8 +7,11 @@ working an uploaded lead list, calling it, and following up by text and
 email. A discovery worker finds sellers on its own by monitoring Reddit
 for seller-intent posts. Ground-up rebuild of an earlier prototype
 ([`Lavish213/rei-agent`](https://github.com/Lavish213/rei-agent)) after an
-audit found several core paths silently broken — see `AGENTS.md` for the
-project's hard rules and full scope.
+audit found several core paths silently broken.
+
+**New here? Read [`PROJECT.md`](PROJECT.md)** — the complete end-to-end
+reference for how every part of this system works. `AGENTS.md` has the
+project's hard rules.
 
 ## Stack
 

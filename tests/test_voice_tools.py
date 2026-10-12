@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from backend.lib import db
@@ -28,15 +29,13 @@ def test_format_offer_range_insufficient_data(monkeypatch):
     monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: {"id": "lead-1", "properties": {}})
     result = format_offer_range("lead-1")
     assert result["available"] is False
-    assert result["reason"] == "not_enough_property_detail_yet"
+    assert result["reason"] == "operator_approved_voice_quote_required"
 
 
-def test_format_offer_range_computes_bounds(monkeypatch):
+def test_underwriting_does_not_authorize_a_quote(monkeypatch):
     monkeypatch.setattr(db, "get_lead_with_property", lambda lead_id: _lead_with_offer())
     result = format_offer_range("lead-1")
-    assert result["available"] is True
-    assert result["low_dollars"] < result["high_dollars"]
-    assert result["low_dollars"] == int(11500000 * 0.9) // 100
+    assert result == {"available": False, "reason": "operator_approved_voice_quote_required"}
 
 
 def test_book_appointment_rejects_bad_datetime():
@@ -48,15 +47,16 @@ def test_book_appointment_success(monkeypatch):
     captured = {}
     monkeypatch.setattr(db, "update_lead_appointment", lambda lead_id, at: captured.setdefault("at", at))
     monkeypatch.setattr(db, "update_lead_fields", lambda lead_id, fields: captured.setdefault("fields", fields))
-    result = book_appointment("lead-1", "2026-08-01T15:00:00Z", notes="wants morning callback first")
+    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    result = book_appointment("lead-1", future, notes="wants morning callback first")
     assert result["success"] is True
-    assert captured["at"] == "2026-08-01T15:00:00Z"
+    assert captured["at"] == future
     assert "wants morning" in captured["fields"]["operator_notes"]
 
 
 def test_request_owner_callback(monkeypatch):
     captured = {}
-    monkeypatch.setattr(db, "update_lead_fields", lambda lead_id, fields: captured.update(fields))
+    monkeypatch.setattr(db, "update_lead_fields", lambda lead_id, fields: captured.update(fields) or True)
     result = request_owner_callback("lead-1", "seller asked about liens")
     assert result["success"] is True
     assert captured["escalated"] is True
@@ -145,9 +145,7 @@ async def test_end_call_handler_pushes_end_frame_and_calls_back(monkeypatch):
 def test_send_details_texts_the_seller(monkeypatch):
     from backend.voice.tools import send_details
 
-    monkeypatch.setattr(
-        db, "get_lead_with_property", lambda lid: {"id": lid, "owner_phone": "+12095551212"}
-    )
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lid: {"id": lid, "owner_phone": "+12095551212"})
     sent = {}
     monkeypatch.setattr(
         "backend.alerts.sms.send_sms",
@@ -176,9 +174,7 @@ def test_send_details_without_a_phone_reports_failure(monkeypatch):
 def test_send_details_without_an_email_reports_failure(monkeypatch):
     from backend.voice.tools import send_details
 
-    monkeypatch.setattr(
-        db, "get_lead_with_property", lambda lid: {"id": lid, "owner_email": None}
-    )
+    monkeypatch.setattr(db, "get_lead_with_property", lambda lid: {"id": lid, "owner_email": None})
 
     result = send_details("lead-1", "email")
 
@@ -239,7 +235,7 @@ def test_escalation_alerts_the_owner(monkeypatch):
     from backend.alerts import owner
     from backend.voice.tools import request_owner_callback
 
-    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: None)
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: True)
     alerted = {}
     monkeypatch.setattr(owner, "alert_escalation", lambda lid, reason: alerted.update(reason=reason))
 
@@ -254,7 +250,7 @@ def test_a_failing_owner_alert_does_not_break_the_call(monkeypatch):
     from backend.alerts import owner
     from backend.voice.tools import request_owner_callback
 
-    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: None)
+    monkeypatch.setattr(db, "update_lead_fields", lambda lid, f: True)
 
     def _boom(lid, reason):
         raise RuntimeError("signalwire down")
@@ -268,10 +264,11 @@ def test_booking_an_appointment_alerts_the_owner(monkeypatch):
     from backend.alerts import owner
     from backend.voice.tools import book_appointment
 
-    monkeypatch.setattr(db, "update_lead_appointment", lambda lid, at: None)
+    monkeypatch.setattr(db, "update_lead_appointment", lambda lid, at: True)
     alerted = {}
     monkeypatch.setattr(owner, "alert_appointment", lambda lid, at: alerted.update(at=at))
 
-    book_appointment("lead-1", "2026-08-01T15:00:00Z")
+    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    book_appointment("lead-1", future)
 
-    assert alerted["at"] == "2026-08-01T15:00:00Z"
+    assert alerted["at"] == future

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -12,29 +13,22 @@ def format_offer_range(lead_id: str) -> dict:
     if not lead:
         return {"available": False, "reason": "lead_not_found"}
 
-    prop = lead.get("properties") or {}
-    arv = prop.get("estimated_arv")
-    mao = prop.get("mao")
-
-    if not arv or not mao:
-        return {"available": False, "reason": "not_enough_property_detail_yet"}
-
-    low = int(mao * 0.9)
-    high = int(mao * 1.05)
-    return {
-        "available": True,
-        "low_dollars": low // 100,
-        "high_dollars": high // 100,
-    }
+    return {"available": False, "reason": "operator_approved_voice_quote_required"}
 
 
 def book_appointment(lead_id: str, appointment_at_iso: str, notes: str | None = None) -> dict:
     try:
-        datetime.fromisoformat(appointment_at_iso.replace("Z", "+00:00"))
-    except ValueError:
+        appointment = datetime.fromisoformat(appointment_at_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError, AttributeError):
         return {"success": False, "reason": "invalid_datetime_format"}
 
-    db.update_lead_appointment(lead_id, appointment_at_iso)
+    if appointment.tzinfo is None or appointment.utcoffset() is None:
+        return {"success": False, "reason": "timezone_required"}
+    if appointment <= datetime.now(UTC):
+        return {"success": False, "reason": "appointment_must_be_in_future"}
+
+    if not db.update_lead_appointment(lead_id, appointment_at_iso):
+        return {"success": False, "reason": "appointment_not_persisted"}
     if notes:
         db.update_lead_fields(lead_id, {"operator_notes": notes})
 
@@ -51,11 +45,16 @@ def book_appointment(lead_id: str, appointment_at_iso: str, notes: str | None = 
 
 
 def request_owner_callback(lead_id: str, reason: str) -> dict:
-    db.update_lead_fields(lead_id, {
-        "escalated": True,
-        "priority_callback": True,
-        "operator_notes": reason,
-    })
+    persisted = db.update_lead_fields(
+        lead_id,
+        {
+            "escalated": True,
+            "priority_callback": True,
+            "operator_notes": reason,
+        },
+    )
+    if not persisted:
+        return {"success": False, "reason": "callback_not_persisted"}
     logger.info("owner_callback_requested lead_id={} reason={}", lead_id, reason)
 
     from backend.alerts.owner import alert_escalation
@@ -131,7 +130,7 @@ def build_sophia_tool_schemas(lead_id: str | None, on_end_call):
         if not lead_id:
             await params.result_callback({"available": False, "reason": "no_lead_on_file"})
             return
-        await params.result_callback(format_offer_range(lead_id))
+        await params.result_callback(await asyncio.to_thread(format_offer_range, lead_id))
 
     async def _book_appointment_handler(params):
         if not lead_id:
@@ -139,14 +138,14 @@ def build_sophia_tool_schemas(lead_id: str | None, on_end_call):
             return
         appointment_at_iso = params.arguments.get("appointment_at_iso", "")
         notes = params.arguments.get("notes")
-        await params.result_callback(book_appointment(lead_id, appointment_at_iso, notes))
+        await params.result_callback(await asyncio.to_thread(book_appointment, lead_id, appointment_at_iso, notes))
 
     async def _request_owner_callback_handler(params):
         if not lead_id:
             await params.result_callback({"success": False, "reason": "no_lead_on_file"})
             return
         reason = params.arguments.get("reason", "")
-        await params.result_callback(request_owner_callback(lead_id, reason))
+        await params.result_callback(await asyncio.to_thread(request_owner_callback, lead_id, reason))
 
     async def _send_details_handler(params):
         if not lead_id:
@@ -154,7 +153,7 @@ def build_sophia_tool_schemas(lead_id: str | None, on_end_call):
             return
         channel = params.arguments.get("channel", "text")
         note = params.arguments.get("note")
-        await params.result_callback(send_details(lead_id, channel, note))
+        await params.result_callback(await asyncio.to_thread(send_details, lead_id, channel, note))
 
     async def _end_call_handler(params):
         await params.result_callback({"success": True})

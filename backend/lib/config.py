@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     signalwire_project_id: str = ""
     signalwire_token: str = ""
+    signalwire_signing_key: str = ""
     signalwire_space: str = ""
     signalwire_phone: str = ""
 

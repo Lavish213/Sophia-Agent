@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
+from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, Request, WebSocket
+from fastapi import APIRouter, Depends, Request, WebSocket
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 
 from backend.lib import db
 from backend.lib.config import get_settings
 from backend.voice.context import preload_call_context, preload_outbound_context
+from backend.voice.security import issue_stream_token, verify_signalwire_request, verify_stream_token
 
 router = APIRouter()
 
@@ -22,20 +25,21 @@ def build_stream_url() -> str:
 
 def build_connect_laml(extra_params: dict[str, str]) -> str:
     stream_url = build_stream_url()
+    extra_params = dict(extra_params)
+    if extra_params.get("call_sid"):
+        extra_params["stream_token"] = issue_stream_token(extra_params)
     params_xml = "".join(
-        f'<Parameter name="{name}" value="{value}"/>'
+        f'<Parameter name="{escape(name, {chr(34): "&quot;"})}" value="{escape(value, {chr(34): "&quot;"})}"/>'
         for name, value in extra_params.items()
         if value
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        "<Response><Connect><Stream url=\"" + stream_url + "\">"
-        + params_xml +
-        "</Stream></Connect></Response>"
+        '<Response><Connect><Stream url="' + stream_url + '">' + params_xml + "</Stream></Connect></Response>"
     )
 
 
-@router.post("/voice/inbound")
+@router.post("/voice/inbound", dependencies=[Depends(verify_signalwire_request)])
 async def handle_inbound_call(request: Request):
     form = await request.form()
     from_number = str(form.get("From", ""))
@@ -44,11 +48,11 @@ async def handle_inbound_call(request: Request):
 
     logger.info("voice_inbound from={} call_sid={}", from_number, call_sid)
 
-    laml = build_connect_laml({"from_number": from_number, "to_number": to_number})
+    laml = build_connect_laml({"from_number": from_number, "to_number": to_number, "call_sid": call_sid})
     return PlainTextResponse(content=laml, media_type="text/xml")
 
 
-@router.post("/voice/outbound/{lead_id}")
+@router.post("/voice/outbound/{lead_id}", dependencies=[Depends(verify_signalwire_request)])
 async def handle_outbound_connect(lead_id: str, request: Request):
     from backend.voice import voicemail
 
@@ -56,9 +60,7 @@ async def handle_outbound_connect(lead_id: str, request: Request):
     call_sid = str(form.get("CallSid", ""))
     answered_by = str(form.get("AnsweredBy", ""))
 
-    logger.info(
-        "voice_outbound_connect lead_id={} call_sid={} answered_by={}", lead_id, call_sid, answered_by
-    )
+    logger.info("voice_outbound_connect lead_id={} call_sid={} answered_by={}", lead_id, call_sid, answered_by)
 
     if voicemail.is_unusable(answered_by):
         logger.info("voice_outbound_unusable lead_id={} answered_by={}", lead_id, answered_by)
@@ -80,15 +82,13 @@ async def handle_outbound_connect(lead_id: str, request: Request):
         call = db.get_call_by_signalwire_sid(call_sid) if call_sid else None
         voicemail.record_voicemail_left(call["id"] if call else None, lead_id, script, lead)
 
-        return PlainTextResponse(
-            content=voicemail.build_voicemail_laml(script), media_type="text/xml"
-        )
+        return PlainTextResponse(content=voicemail.build_voicemail_laml(script), media_type="text/xml")
 
-    laml = build_connect_laml({"lead_id": lead_id})
+    laml = build_connect_laml({"lead_id": lead_id, "call_sid": call_sid})
     return PlainTextResponse(content=laml, media_type="text/xml")
 
 
-@router.post("/voice/status")
+@router.post("/voice/status", dependencies=[Depends(verify_signalwire_request)])
 async def handle_status_callback(request: Request):
     form = await request.form()
     call_sid = str(form.get("CallSid", ""))
@@ -104,6 +104,7 @@ async def handle_status_callback(request: Request):
         is_voicemail = bool(call and call.get("voicemail_left") and call.get("lead_id"))
         if is_voicemail and db.mark_followup_sent_if_unset(call["id"]):
             from backend.alerts.followup import send_post_call_followup
+
             send_post_call_followup(call["lead_id"], call["id"], "voicemail")
         return PlainTextResponse(content="ok")
 
@@ -115,6 +116,7 @@ async def handle_status_callback(request: Request):
         call = db.get_call_by_signalwire_sid(call_sid)
         if call and call.get("lead_id") and db.mark_followup_sent_if_unset(call["id"]):
             from backend.alerts.followup import send_post_call_followup
+
             send_post_call_followup(call["lead_id"], call["id"], call_status)
 
     return PlainTextResponse(content="ok")
@@ -129,12 +131,16 @@ async def handle_voice_stream(websocket: WebSocket):
         from pipecat.serializers.twilio import TwilioFrameSerializer
         from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams, FastAPIWebsocketTransport
 
-        transport_type, call_data = await parse_telephony_websocket(websocket)
+        transport_type, call_data = await asyncio.wait_for(parse_telephony_websocket(websocket), timeout=10)
         if transport_type != "twilio":
             logger.error("voice_stream_unexpected_transport_type type={}", transport_type)
             await websocket.close()
             return
 
+        claims = verify_stream_token((call_data.body or {}).get("stream_token", ""), call_data.call_id)
+        if not claims:
+            await websocket.close(code=1008)
+            return
         serializer = TwilioFrameSerializer(
             stream_sid=call_data.stream_id,
             call_sid=call_data.call_id,
@@ -150,16 +156,18 @@ async def handle_voice_stream(websocket: WebSocket):
             ),
         )
 
-        lead_id_param = (call_data.body or {}).get("lead_id")
+        lead_id_param = claims.get("lead_id")
         if lead_id_param:
             call_context = preload_outbound_context(lead_id_param)
             call_context["direction"] = "outbound"
         else:
-            call_context = preload_call_context(call_data.from_number or "")
+            call_context = preload_call_context(claims.get("from_number") or "")
             call_context["direction"] = "inbound"
         call_context["call_sid"] = call_data.call_id
+        call_context["caller_phone"] = claims.get("from_number")
 
         from backend.voice.agent import run_sophia_agent
+
         await run_sophia_agent(transport, call_context)
 
     except Exception as e:

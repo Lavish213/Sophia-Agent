@@ -27,11 +27,12 @@ def _lead(**overrides):
     return lead
 
 
-def test_context_str_includes_address_and_offer_range():
+def test_context_keeps_underwriting_out_of_voice_quote_authority():
     text = build_property_context_str(_lead())
     assert "123 Main St" in text
-    assert "$200,000" in text
-    assert "$115,000" in text
+    assert "$200,000" not in text
+    assert "$115,000" not in text
+    assert "not an approved offer" in text
 
 
 def test_context_str_includes_prior_call_facts():

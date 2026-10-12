@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
 from loguru import logger
 
 from backend.alerts.sms import handle_inbound_sms
+from backend.voice.security import verify_signalwire_request
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ def _stop_confirmation_response() -> str:
     )
 
 
-@router.post("/sms/inbound")
+@router.post("/sms/inbound", dependencies=[Depends(verify_signalwire_request)])
 async def handle_sms_inbound(request: Request):
     form = await request.form()
     from_number = str(form.get("From", ""))

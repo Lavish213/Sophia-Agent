@@ -27,8 +27,7 @@ def extract_transcript_chunks_from_messages(messages: list[dict]) -> list[dict]:
         content = message.get("content")
         if isinstance(content, list):
             text = " ".join(
-                block.get("text", "") for block in content
-                if isinstance(block, dict) and block.get("type") == "text"
+                block.get("text", "") for block in content if isinstance(block, dict) and block.get("type") == "text"
             )
         else:
             text = str(content or "")
@@ -37,11 +36,13 @@ def extract_transcript_chunks_from_messages(messages: list[dict]) -> list[dict]:
         if not text:
             continue
 
-        chunks.append({
-            "speaker": "sophia" if role == "assistant" else "seller",
-            "text": text,
-            "sequence_order": order,
-        })
+        chunks.append(
+            {
+                "speaker": "sophia" if role == "assistant" else "seller",
+                "text": text,
+                "sequence_order": order,
+            }
+        )
         order += 1
 
     return chunks
@@ -80,13 +81,13 @@ def build_user_turn_strategies():
             logger.warning("smart_turn_unavailable_falling_back error={}", str(e))
 
     return UserTurnStrategies(
-        stop=SpeechTimeoutUserTurnStopStrategy(
-            user_speech_timeout=settings.user_speech_timeout_secs
-        )
+        stop=SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=settings.user_speech_timeout_secs)
     )
 
 
 def resolve_final_disposition(intel: dict | None, tool_disposition: str | None, has_transcript: bool) -> str | None:
+    if tool_disposition == "OPTED_OUT":
+        return "OPTED_OUT"
     extracted = (intel or {}).get("disposition")
     if extracted:
         return extracted
@@ -109,9 +110,14 @@ def build_pipeline_worker(transport, call_context: dict, on_end_call):
     from pipecat.services.deepgram.stt import DeepgramSTTService
     from pipecat.services.deepgram.tts import DeepgramTTSService
 
+    from backend.voice.opt_out import VoiceOptOutGuard
+
     settings = get_settings()
 
-    stt = DeepgramSTTService(api_key=settings.deepgram_api_key)
+    stt = DeepgramSTTService(
+        api_key=settings.deepgram_api_key,
+        settings=DeepgramSTTService.Settings(model=settings.deepgram_stt_model),
+    )
     tts = DeepgramTTSService(
         api_key=settings.deepgram_api_key,
         settings=DeepgramTTSService.Settings(voice=settings.deepgram_tts_model),
@@ -134,15 +140,19 @@ def build_pipeline_worker(transport, call_context: dict, on_end_call):
         ),
     )
 
-    pipeline = Pipeline([
-        transport.input(),
-        stt,
-        user_aggregator,
-        llm,
-        tts,
-        transport.output(),
-        assistant_aggregator,
-    ])
+    opt_out_guard = VoiceOptOutGuard(call_context, on_end_call)
+    pipeline = Pipeline(
+        [
+            transport.input(),
+            stt,
+            opt_out_guard,
+            user_aggregator,
+            llm,
+            tts,
+            transport.output(),
+            assistant_aggregator,
+        ]
+    )
 
     worker = PipelineWorker(
         pipeline,
@@ -153,11 +163,12 @@ def build_pipeline_worker(transport, call_context: dict, on_end_call):
         ),
     )
 
+    opt_out_guard.worker = worker
     return worker, context, llm
 
 
 async def run_sophia_agent(transport, call_context: dict) -> None:
-    from pipecat.frames.frames import LLMRunFrame
+    from pipecat.frames.frames import TTSSpeakFrame
     from pipecat.workers.runner import WorkerRunner
 
     call_id_holder: dict = {"call_id": None}
@@ -179,11 +190,13 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
         if existing_call:
             call_id = existing_call["id"]
         else:
-            call_id = db.insert_call({
-                "lead_id": lead_id,
-                "direction": call_context.get("direction", "inbound"),
-                "signalwire_call_id": call_sid,
-            })
+            call_id = db.insert_call(
+                {
+                    "lead_id": lead_id,
+                    "direction": call_context.get("direction", "inbound"),
+                    "signalwire_call_id": call_sid,
+                }
+            )
         call_id_holder["call_id"] = call_id
         if lead_id:
             db.insert_call_event(call_id, lead_id, "call_started")
@@ -193,11 +206,14 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
             f"{call_context.get('caller_awareness_str', '')} "
             f"{call_context.get('property_context_str', '')} "
             f"{call_context.get('call_brief_str', '')} "
-            "Start the call by greeting them naturally and, if you have a property on file, "
-            "referencing it briefly. If you don't recognize them, greet them and ask how you can help."
+            "The AI opening disclosure has already been spoken. Wait for the caller's reply. "
+            "Confirm identity before discussing any property or personal details. "
+            "Never assume an address on file was confirmed by the caller."
         )
         context.add_message({"role": "developer", "content": greeting_instruction})
-        await worker.queue_frames([LLMRunFrame()])
+        opening = "Hi, I'm Sophia, an AI assistant with San Joaquin House Buyers. Is now an okay time to talk?"
+        context.add_message({"role": "assistant", "content": opening})
+        await worker.queue_frames([TTSSpeakFrame(opening)])
 
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
@@ -218,21 +234,26 @@ async def run_sophia_agent(transport, call_context: dict) -> None:
         db.insert_transcript_chunks(call_id, lead_id, chunks)
 
         from backend.voice.post_call_intel import run_post_call_intel
+
         intel = run_post_call_intel(call_id, lead_id)
 
         final_disposition = resolve_final_disposition(intel, tool_disposition, bool(chunks))
 
-        db.update_call_fields(call_id, {
-            "call_disposition": final_disposition,
-            "duration_seconds": duration_seconds,
-            "ended_at": datetime.now(UTC).isoformat(),
-        })
+        db.update_call_fields(
+            call_id,
+            {
+                "call_disposition": final_disposition,
+                "duration_seconds": duration_seconds,
+                "ended_at": datetime.now(UTC).isoformat(),
+            },
+        )
         if lead_id:
             db.update_lead_call_outcome(lead_id, final_disposition or "completed")
             db.insert_call_event(call_id, lead_id, "call_ended", {"disposition": final_disposition})
 
-        if lead_id and final_disposition:
+        if lead_id and final_disposition and final_disposition != "OPTED_OUT":
             from backend.alerts.followup import send_post_call_followup
+
             send_post_call_followup(lead_id, call_id, final_disposition)
 
         logger.info("call_finished call_id={} lead_id={} disposition={}", call_id, lead_id, final_disposition)

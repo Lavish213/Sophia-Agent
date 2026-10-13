@@ -21,6 +21,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def suppress_voice_contact(lead_id: str | None, phone: str) -> bool:
+    result = get_client().rpc("suppress_voice_contact", {"p_lead_id": lead_id, "p_phone": phone}).execute()
+    return result.data is True
+
+
 def upsert_property(data: dict) -> str | None:
     client = get_client()
     response = client.table("properties").upsert(data, on_conflict="apn").execute()
@@ -164,14 +169,15 @@ def update_lead_stage(lead_id: str, stage: str) -> None:
     logger.info("update_lead_stage lead_id={} stage={}", lead_id, stage)
 
 
-def update_lead_fields(lead_id: str, fields: dict) -> None:
+def update_lead_fields(lead_id: str, fields: dict) -> bool:
     if not fields:
-        return
+        return False
     client = get_client()
     data = dict(fields)
     data["updated_at"] = _now()
-    client.table("leads").update(data).eq("id", lead_id).execute()
+    result = client.table("leads").update(data).eq("id", lead_id).execute()
     logger.debug("update_lead_fields lead_id={} fields={}", lead_id, list(fields.keys()))
+    return bool(result.data and any(str(row.get("id")) == str(lead_id) for row in result.data))
 
 
 def get_leads_for_outbound(min_score: int = 50, limit: int = 25, reattempt_hours: int = 72) -> list[dict]:
@@ -219,14 +225,15 @@ def update_lead_call_outcome(lead_id: str, outcome: str) -> None:
     logger.info("update_lead_call_outcome lead_id={} outcome={}", lead_id, outcome)
 
 
-def update_lead_appointment(lead_id: str, appointment_at: str) -> None:
+def update_lead_appointment(lead_id: str, appointment_at: str) -> bool:
     client = get_client()
-    client.table("leads").update({
+    result = client.table("leads").update({
         "appointment_at": appointment_at,
         "stage": "walkthrough_booked",
         "updated_at": _now(),
     }).eq("id", lead_id).execute()
     logger.info("update_lead_appointment lead_id={} at={}", lead_id, appointment_at)
+    return bool(result.data and any(str(row.get("id")) == str(lead_id) for row in result.data))
 
 
 def insert_call(data: dict) -> str | None:

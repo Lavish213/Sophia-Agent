@@ -26,7 +26,7 @@ def build_property_context_str(lead: dict) -> str:
     arv = _format_cents(prop.get("estimated_arv"))
     mao = _format_cents(prop.get("mao"))
     if arv and mao:
-        lines.append(f"Estimated after-repair value is around {arv}, rough offer range would land near {mao}.")
+        lines.append("Internal underwriting estimates exist. They are not an approved offer and must not be quoted to the caller.")
 
     motivation = lead.get("motivation_level")
     if motivation is not None:
